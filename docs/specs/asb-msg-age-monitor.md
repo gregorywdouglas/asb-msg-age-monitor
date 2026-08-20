@@ -2,7 +2,7 @@
 
 **Status:** Draft for build
 **Version:** 1.0
-**Platform:** WMX — Azure Integration Services middleware (BizTalk Server 2020 replacement, IBM Maximo integration)
+**Platform:** EIE — Azure Integration Services middleware (BizTalk Server 2020 replacement, IBM Maximo integration)
 **Service tier:** Tier 1 — RTO < 1 hour, RPO near-zero
 **Regions:** East US 2 (primary), Central US (secondary), hot standby
 **Runtime:** .NET 10, Azure Functions isolated worker
@@ -43,10 +43,10 @@ This component is **L1** of a four-layer detection topology:
 
 | Layer | Mechanism | Detects | Owner |
 |---|---|---|---|
-| **L1** | **Timer-triggered peek (this component)** | **Broker-side message age** | **WMX platform** |
+| **L1** | **Timer-triggered peek (this component)** | **Broker-side message age** | **EIE platform** |
 | L2 | Consumer-side dequeue latency instrumentation | Consumer processing lag | Consumer app teams |
-| L3 | TTL + dead-letter backstop | Terminal message failure | WMX platform |
-| L4 | Monitoring-health no-data alerting | Failure of L1–L3 themselves | WMX platform |
+| L3 | TTL + dead-letter backstop | Terminal message failure | EIE platform |
+| L4 | Monitoring-health no-data alerting | Failure of L1–L3 themselves | EIE platform |
 
 L1 detects when a message in any Service Bus queue or topic subscription has aged past a configured threshold, and emits that as alertable telemetry to two independent sinks.
 
@@ -322,7 +322,7 @@ This is a statement about the present, not a projection, which is why it can car
 | **FR-046** | Each sink SHALL retry with exponential backoff up to `EmitRetryCount` (default 3), **inside** the tick deadline. Functions-level retry SHALL NOT be used, because a retried invocation re-peeks the namespace. |
 | **FR-047** | **Cross-witnessing:** a sink failure SHALL be recorded in the surviving sink and in `ILogger`. There SHALL be no failure mode in which a sink outage leaves no trace. |
 | **FR-048** | Adaptive sampling SHALL be disabled for metric telemetry. Sampled-away metric points produce missing alert evaluations indistinguishable from healthy silence. |
-| **FR-049** | `EnableCustomMetricsDimensions` SHALL be enabled. Without it, dimensions are stripped and the metric collapses to a namespace-wide average that would essentially never breach. |
+| **FR-049** | The Application Insights component SHALL set `CustomMetricsOptedInType` to `WithDimensions`. Without it, dimensions are stripped and the metric collapses to a namespace-wide average that would essentially never breach. This is a component property; no function app setting controls it. |
 | **FR-050** | The monitor SHALL NOT call any receive, complete, abandon, defer, dead-letter or renew-lock operation. This SHALL be enforced by an architecture test ([TST-070](#116-security-and-architecture)). |
 | **FR-051** | Every record SHALL carry `SchemaVersion` and a deterministic `MeasurementId = SHA256(SourceRegion | ScheduledTickUtc | EntityPath)`, derived from the **scheduled** occurrence time, not execution time. |
 
@@ -379,7 +379,7 @@ This is a statement about the present, not a projection, which is why it can car
 
 ## 6. Component contracts
 
-Namespace root: `Wmx.ServiceBus.AgeMonitor`.
+Namespace root: `EIE.ServiceBus.AgeMonitor`.
 
 ### 6.1 Domain model
 
@@ -629,7 +629,7 @@ public sealed record TickResult(
 | `CFG-015` `Telemetry__DcrImmutableId` | string | — | |
 | `CFG-016` `Telemetry__MeasurementStream` | string | `Custom-ServiceBusMessageAge_CL` | |
 | `CFG-017` `Telemetry__HealthStream` | string | `Custom-ServiceBusMonitorHealth_CL` | |
-| `CFG-018` `Telemetry__MetricNamespace` | string | `WMX.ServiceBus` | |
+| `CFG-018` `Telemetry__MetricNamespace` | string | `EIE.ServiceBus` | |
 | `CFG-019` `Hashing__SaltSecretName` | string | `asbmon-hash-salt` | Key Vault reference. |
 
 ### 7.2 Runtime configuration (Azure App Configuration, no redeploy)
@@ -685,7 +685,7 @@ Prefix: `asbmon:`. All values validated per [FR-033](#44-thresholds-and-configur
 
 ### 8.1 Application Insights custom metrics
 
-Namespace `WMX.ServiceBus`. Dimensions are deliberately minimal to bound time-series cardinality and custom-metric dimension billing.
+Namespace `EIE.ServiceBus`. Dimensions are deliberately minimal to bound time-series cardinality and custom-metric dimension billing.
 
 | Metric | Dimensions | Emitted when |
 |---|---|---|
@@ -702,7 +702,7 @@ Namespace `WMX.ServiceBus`. Dimensions are deliberately minimal to bound time-se
 
 **Required host configuration:**
 - Adaptive sampling disabled for metric telemetry ([FR-048](#46-emission)).
-- `EnableCustomMetricsDimensions = true` ([FR-049](#46-emission)). Without it the entire alerting design silently fails while still producing plausible-looking telemetry.
+- `CustomMetricsOptedInType = WithDimensions` on the Application Insights component ([FR-049](#46-emission)). Without it the entire alerting design silently fails while still producing plausible-looking telemetry.
 
 ### 8.2 `ServiceBusMessageAge_CL`
 
@@ -1068,7 +1068,7 @@ All exercised through the port with plain records; no SDK types, no mocking fram
 | `TST-061` | Field sent but not declared in DCR | detected by `TST-060` (it would otherwise be silently dropped) |
 | `TST-062` | `EmitRawMessageIdentifiers == false` | `MessageIdHash` populated, raw `MessageId` absent from all output |
 | `TST-063` | Same `MessageId`, two ticks | identical hash (correlation works without disclosure) |
-| `TST-064` | Custom metric dimensions | `EntityPath` present in App Insights (guards the `EnableCustomMetricsDimensions` trap) |
+| `TST-064` | Custom metric dimensions | `EntityPath` present in App Insights (guards the `CustomMetricsOptedInType` trap) |
 | `TST-065` | Sampling configuration | no metric telemetry sampled away under sustained emission |
 
 ### 11.6 Security and architecture
@@ -1160,11 +1160,11 @@ Assumptions are working defaults chosen where a decision was needed to make the 
 | ID | Assumption |
 |---|---|
 | `ASM-001` | Entity cardinality is 40–80 queues and subscriptions per environment, growing toward ~200 as BizTalk migration completes. All budget figures derive from this ([OPN-001](#14-open-items-register)). |
-| `ASM-002` | BizTalk and WMX running in parallel during migration does **not** increase Service Bus entity count, because BizTalk does not use Service Bus. Migration increases entity count monotonically as integrations move. |
+| `ASM-002` | BizTalk and EIE running in parallel during migration does **not** increase Service Bus entity count, because BizTalk does not use Service Bus. Migration increases entity count monotonically as integrations move. |
 | `ASM-003` | Structured logging conventions: `ILogger` with scopes carrying `TickId`, `EntityPath`, `SourceRegion`, `CorrelationId`; `Information` for tick summary, `Warning` for degradation and per-entity failure, `Error` for emit failure and unhandled exceptions. No per-message `Debug` logging in production. |
 | `ASM-004` | Action group composition per [§9.6](#96-action-groups-and-notification-assumed--asm-004). |
-| `ASM-005` | RACI: WMX platform team is Responsible and Accountable for the monitor and its alert rules; consumer app teams are Consulted on per-entity thresholds and criticality class; the monitoring/NOC function is Informed. |
-| `ASM-006` | The Log Analytics workspace, DCE and action groups already exist as shared WMX resources and are referenced, not created ([OPN-005](#14-open-items-register)). |
+| `ASM-005` | RACI: EIE platform team is Responsible and Accountable for the monitor and its alert rules; consumer app teams are Consulted on per-entity thresholds and criticality class; the monitoring/NOC function is Informed. |
+| `ASM-006` | The Log Analytics workspace, DCE and action groups already exist as shared EIE resources and are referenced, not created ([OPN-005](#14-open-items-register)). |
 | `ASM-007` | Metric alert time-series limits are not approached at current cardinality; re-evaluate above 1 000 entities ([OPN-014](#14-open-items-register)). |
 | `ASM-008` | Interactive retention of 90 days is sufficient for operational investigation; SLA questions are served by the rollup table. |
 | `ASM-009` | Hourly rollup granularity is sufficient for SLA reporting. If sub-hourly breach accounting is required, the summary rule cadence changes but the schema does not. |
@@ -1178,22 +1178,22 @@ Items the requirement owner was uncertain about, or that require verification. *
 
 | ID | Item | Impact if wrong | Owner | Blocking? |
 |---|---|---|---|---|
-| `OPN-001` | Actual entity cardinality per environment | Every budget number: concurrency, deadline, ingestion cost, metric series | WMX platform | No — defaults hold to ~200 entities |
-| `OPN-002` | **MU cost of a full-budget tick is unquantified.** Requires a load test against realistic entity counts and depths, with acceptance criterion "monitoring ≤ 2 % of namespace MU at P99" | Degradation thresholds in [§7.2](#72-runtime-configuration-azure-app-configuration-no-redeploy) are placeholders; the self-interference feedback loop is unbounded in theory | WMX platform | **Yes — pre-production gate** |
-| `OPN-003` | Whether a peek-only custom RBAC role is expressible. Author's assessment: **not** expressible | If not, the code guard ([TST-070](#116-security-and-architecture)) is the sole control and needs security sign-off as an accepted risk | Security + WMX | No — fallback defined |
+| `OPN-001` | Actual entity cardinality per environment | Every budget number: concurrency, deadline, ingestion cost, metric series | EIE platform | No — defaults hold to ~200 entities |
+| `OPN-002` | **MU cost of a full-budget tick is unquantified.** Requires a load test against realistic entity counts and depths, with acceptance criterion "monitoring ≤ 2 % of namespace MU at P99" | Degradation thresholds in [§7.2](#72-runtime-configuration-azure-app-configuration-no-redeploy) are placeholders; the self-interference feedback loop is unbounded in theory | EIE platform | **Yes — pre-production gate** |
+| `OPN-003` | Whether a peek-only custom RBAC role is expressible. Author's assessment: **not** expressible | If not, the code guard ([TST-070](#116-security-and-architecture)) is the sole control and needs security sign-off as an accepted risk | Security + EIE | No — fallback defined |
 | `OPN-004` | **Namespace firewall posture.** IP allow-listing requires deterministic egress (VNet + NAT Gateway); the alternative is a permissive firewall with `disableLocalAuth` and Entra-only access. See [§10.2](#102-networking) | An IP allow-list that drifts fails silently and presents as a Service Bus outage | Security | **Yes — changes Bicep** |
-| `OPN-005` | Which shared resources are referenced vs created: App Configuration store, Log Analytics workspace, DCE, DCR, action groups | Changes Bicep from `create` to `existing` throughout | WMX platform | **Yes** |
-| `OPN-006` | **Runbook ownership and authorship.** Confirmed as a deliverable of this work; author and reviewer not assigned. Also unresolved: whether Sev1 pages before the runbook exists (recommendation: no) | Sev1 with no defined action | WMX platform | No — spec defines required content |
+| `OPN-005` | Which shared resources are referenced vs created: App Configuration store, Log Analytics workspace, DCE, DCR, action groups | Changes Bicep from `create` to `existing` throughout | EIE platform | **Yes** |
+| `OPN-006` | **Runbook ownership and authorship.** Confirmed as a deliverable of this work; author and reviewer not assigned. Also unresolved: whether Sev1 pages before the runbook exists (recommendation: no) | Sev1 with no defined action | EIE platform | No — spec defines required content |
 | `OPN-007` | Business-impact mapping per entity | Alert text cannot be written; NOC cannot triage | Integration owner | No |
-| `OPN-008` | Criticality class assignment process, and the approver for new entities | Degradation ladder sheds the wrong entities; default is `standard` | WMX platform | No |
+| `OPN-008` | Criticality class assignment process, and the approver for new entities | Degradation ladder sheds the wrong entities; default is `standard` | EIE platform | No |
 | `OPN-009` | RBAC approver set for `asbmon:*` in App Configuration | The no-redeploy design rests entirely on this being tightly scoped | Security | No |
-| `OPN-010` | **Whether the L2 consumer-side dequeue-latency layer exists yet.** Two runbook branches depend on it | Those branches degrade to "escalate and investigate" | WMX platform | No |
-| `OPN-011` | The SLA target itself. Rollup schema is generic (breach-minutes) and can serve most definitions, but the definition is unknown | Rollup may need recomputation from raw within the 90-day window | Business + WMX | No |
-| `OPN-012` | Whether the L3 backstop observes the **transfer** DLQ (`$Transfer/$DeadLetterQueue`) as distinct from the normal DLQ. A rule written against the normal DLQ will not see auto-forward failures | Auto-forward failures may be unmonitored by both L1 and L3 | WMX platform | No — `ALR-022` covers it independently |
+| `OPN-010` | **Whether the L2 consumer-side dequeue-latency layer exists yet.** Two runbook branches depend on it | Those branches degrade to "escalate and investigate" | EIE platform | No |
+| `OPN-011` | The SLA target itself. Rollup schema is generic (breach-minutes) and can serve most definitions, but the definition is unknown | Rollup may need recomputation from raw within the 90-day window | Business + EIE | No |
+| `OPN-012` | Whether the L3 backstop observes the **transfer** DLQ (`$Transfer/$DeadLetterQueue`) as distinct from the normal DLQ. A rule written against the normal DLQ will not see auto-forward failures | Auto-forward failures may be unmonitored by both L1 and L3 | EIE platform | No — `ALR-022` covers it independently |
 | `OPN-013` | **Whether Event Grid enrichment is phase 1 or phase 2.** This spec defers it, using `ConsumptionStalled` as the primary consumer-health signal. This **deviates from settled decision S-03's implication** that Event Grid appears as enrichment. Rationale: a fail-silent source in an alert payload is worse than an absent field, because "NoListeners: false" cannot be distinguished from "Event Grid stopped delivering three weeks ago" | If phase 1 is required, adds a table, a DCR stream, an Event Grid subscription, an Event-Grid-health check, and a staleness field in the payload | Requirement owner | **Yes — schema impact** |
-| `OPN-014` | Metric alert time-series capacity as entity count grows past ~1 000 | Metric alerting silently stops covering some entities | WMX platform | No |
-| `OPN-015` | Whether receiver/listener count is readable via a supported SDK or ARM surface. If it is, it is strictly better than `ConsumptionStalled` inference | Would simplify the consumer-health signal | WMX platform | No |
-| `OPN-016` | **.NET 10 isolated worker support on Flex Consumption**, and whether the timer trigger's singleton lock holds under Flex's scaling model | Fallback is EP1 pinned to one instance — Bicep changes, code does not | WMX platform | **Yes — verify at build start** |
+| `OPN-014` | Metric alert time-series capacity as entity count grows past ~1 000 | Metric alerting silently stops covering some entities | EIE platform | No |
+| `OPN-015` | Whether receiver/listener count is readable via a supported SDK or ARM surface. If it is, it is strictly better than `ConsumptionStalled` inference | Would simplify the consumer-health signal | EIE platform | No |
+| `OPN-016` | **.NET 10 isolated worker support on Flex Consumption**, and whether the timer trigger's singleton lock holds under Flex's scaling model | Fallback is EP1 pinned to one instance — Bicep changes, code does not | EIE platform | **Yes — verify at build start** |
 
 ---
 
@@ -1201,7 +1201,7 @@ Items the requirement owner was uncertain about, or that require verification. *
 
 | ID | Item | Rationale | Residual risk |
 |---|---|---|---|
-| `OUT-001` | **End-to-end age** from a producer-stamped origin timestamp (`EndToEndAgeSeconds`) | Requires a producer contract that does not exist, and would put alerting at the mercy of producer compliance | Per-hop measurement does not answer end-to-end SLA questions. Prerequisite for phase 2: a WMX producer contract mandating an origin timestamp |
+| `OUT-001` | **End-to-end age** from a producer-stamped origin timestamp (`EndToEndAgeSeconds`) | Requires a producer contract that does not exist, and would put alerting at the mercy of producer compliance | Per-hop measurement does not answer end-to-end SLA questions. Prerequisite for phase 2: an EIE producer contract mandating an origin timestamp |
 | `OUT-002` | **DLQ message age** | Scoped out in favour of DLQ depth via L3. Would roughly double entity count, scan budget and telemetry for a signal whose thresholds are measured in days | **A dead-letter queue whose contents are never triaged is invisible to this system.** A DLQ holding a steady 12 messages reads identically whether they arrived this morning or last quarter. Candidate enhancement: a stagnant-depth KQL rule (`min(depth) == max(depth) over 7d and depth > 0`) at zero scan cost |
 | `OUT-003` | Event Grid enrichment | See [OPN-013](#14-open-items-register) | Cannot distinguish "zero receivers attached" from "receivers attached but not completing". Assessed as a distinction without a difference at 03:00 — both mean nothing is being consumed and the responder's next step is identical |
 | `OUT-004` | External synthetic canary outside Azure Monitor | Deliberate exclusion, not an oversight. At RTO < 1 hour, a third independent monitoring system costs more than the residual risk | A whole-subscription or Azure-Monitor-wide failure would blind L4 |
@@ -1220,3 +1220,30 @@ Five principles decided multiple questions during specification. Where a future 
 3. **Degradation must always be visible.** Any design where reduced coverage is silent fails L4's purpose, regardless of how much cost it saves. *(Decides: tick deadline over sharding, `MonitorTickIncomplete`, `MeasurementStatus`, `ThresholdSource`.)*
 4. **Alerting must never depend on producer compliance.** Anything a producer can forget to do, a producer will eventually forget to do. *(Decides: broker `EnqueuedTimeUtc` over stamped origin timestamps, end-to-end age deferral.)*
 5. **The monitor should have fewer dependencies than the thing it monitors,** and every dependency it does have should fail toward more monitoring rather than less. *(Decides: App Configuration fallback chain, lease fail-open semantics, Event Grid exclusion.)*
+
+---
+
+## Appendix B — Implementation deviations
+
+Points where the implementation departs from a literal reading of this spec, with the reasoning. Each is referenced from the code at the site of the deviation.
+
+| ID | Deviation | Reason |
+|---|---|---|
+| **SPEC-DEVIATION-001** | §3.3 lists both "`AgeSeconds < 0` → clamp **and** emit `ClockAnomaly`" and "`EnqueuedTimeUtc > now + tolerance` → `ClockAnomaly`". The implementation clamps **unconditionally** but raises `ClockAnomaly` only beyond the tolerance. | A literal reading makes `ClockSkewToleranceSeconds` dead configuration and turns sub-second NTP jitter into a permanent `ClockAnomaly` on every entity, which would keep ALR-019 firing continuously. The clamp is the safety behaviour; the tolerance is what makes the signal meaningful. |
+| **SPEC-DEVIATION-002** | `MeasurementRecordFactory.Create` advances the per-entity scan state itself; callers must not invoke `IScanStateStore.RecordObservation` separately. | The stall counter must reflect *this* tick's observation while the age delta is computed against the *previous* one. Splitting those across two call sites makes the emitted record silently lag by one tick if the ordering is ever changed — a defect that would be invisible in production. |
+| **SPEC-DEVIATION-003** | At `L3` degradation a `bulk`-class entity has an effective scan depth of 0. §3.6 says `Degraded` always carries an age; the implementation emits `Degraded` with a **null** age, and metric emission is additionally guarded on the age being non-null. | No peek occurred, so no age exists. Emitting a value would fabricate one (NFR-001); dropping the record would break the liveness contract (FR-007). `DegradationLevel` on the record explains why the age is absent. |
+| **SPEC-DEVIATION-004** | During cold-start ticks, entities outside the current stagger slice emit `NotMeasured` with `MeasurementContext = ColdStart` rather than being omitted. | FR-027 (stagger to avoid a recycle burst) and FR-007 (every entity emits every tick) are in tension. Emitting a `NotMeasured` record satisfies both: the burst is avoided and absence of a row still never means healthy. |
+| **SPEC-DEVIATION-005** | Monitor-level events are written to a second table, `ServiceBusMonitorHealth_CL`, rather than into `ServiceBusMessageAge_CL`. S-05 names only the measurement table. | The schemas are unrelated. Folding heartbeats and lease events into the measurement table would either pollute it with mostly-null columns or require a sentinel `EntityPath`, both of which corrupt the per-entity queries that alerting depends on. |
+| **SPEC-DEVIATION-006** | ALR-041 (cross-region duplicate grouping) is implemented by **dimension design** rather than an alert processing rule: the metric alerts split on `EntityPath` only, so Azure aggregates both regions onto one time series. ALR-040 (failover grouping) is **not deployed** — see below. | Azure alert processing rules express suppression and action-group substitution, not correlation grouping. ALR-040's intent is recorded in the runbook as an operational step. **This is a genuine gap:** during a namespace failover, expect N separate alerts rather than one grouped incident. |
+| **SPEC-DEVIATION-007** | Runtime message counts come from the ARM `countDetails` on the entity list, not from `ServiceBusAdministrationClient`. | §10.3 requires discovery to use ARM Reader rather than Data Owner. `GetQueueRuntimePropertiesAsync` authenticates against the data plane and effectively needs Data Owner, which would defeat the privilege reduction. One ARM enumeration per tick also costs far less than ~80 per-entity calls. **Trade-off:** ARM counts may lag the broker slightly more than a data-plane read; the corroboration logic in §3.5 treats disagreement between counts and peek as `Indeterminate`, which is the safe direction. |
+
+### Verification status
+
+| Category | Status |
+|---|---|
+| Unit tests (TST-001..049), telemetry/schema (TST-060..065), architecture (TST-070..072) | **88 passing** |
+| Emulator integration (TST-080..085) | Implemented, **skipped** without `ASBMON_EMULATOR_CONNECTION_STRING` |
+| Contract tests (TST-090..094) | Implemented, **skipped** without `ASBMON_CONTRACT_NAMESPACE` |
+| Alerting (TST-050..056) and staging scenarios (TST-100..110) | Driven by `tools/…ScenarioGenerator`; require a live staging environment and are **not verified** |
+| Bicep templates | Compile cleanly (one benign `BCP081` for a preview API type). **Not deployed or deployment-validated.** |
+| NFR-005 monitoring MU share | **Unquantified** — OPN-002 remains a pre-production gate. |

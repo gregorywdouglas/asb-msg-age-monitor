@@ -1,0 +1,22 @@
+[
+  { "name": "TimeGenerated", "type": "datetime" },
+  { "name": "TickId", "type": "string" },
+  { "name": "SourceRegion", "type": "string" },
+  { "name": "Environment", "type": "string" },
+  { "name": "EventType", "type": "string" },
+  { "name": "Severity", "type": "string" },
+  { "name": "IsLeaseHolder", "type": "boolean" },
+  { "name": "LeaseHolder", "type": "string" },
+  { "name": "DiscoveredEntities", "type": "int" },
+  { "name": "MeasuredEntities", "type": "int" },
+  { "name": "IndeterminateEntities", "type": "int" },
+  { "name": "SkippedEntities", "type": "int" },
+  { "name": "BlockedEntities", "type": "int" },
+  { "name": "TickDurationMs", "type": "long" },
+  { "name": "DegradationLevel", "type": "int" },
+  { "name": "ConfigSource", "type": "string" },
+  { "name": "AppInsightsEmitOk", "type": "boolean" },
+  { "name": "LogsIngestionEmitOk", "type": "boolean" },
+  { "name": "EntityPath", "type": "string" },
+  { "name": "Detail", "type": "string" }
+]

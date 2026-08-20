@@ -1,0 +1,27 @@
+{
+  "version": "2.0",
+  "logging": {
+    "applicationInsights": {
+      "samplingSettings": {
+        "isEnabled": false
+      },
+      "enableLiveMetricsFilters": true
+    },
+    "logLevel": {
+      "default": "Information",
+      "Azure.Core": "Warning",
+      "Azure.Identity": "Warning",
+      "Host.Triggers.Timer": "Information"
+    }
+  },
+  "extensions": {
+    "timers": {
+      "useMonitor": true
+    }
+  },
+  "singleton": {
+    "lockPeriod": "00:00:30",
+    "listenerLockPeriod": "00:01:00",
+    "listenerLockRecoveryPollingInterval": "00:01:00"
+  }
+}

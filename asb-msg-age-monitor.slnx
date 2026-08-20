@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/EIE.ServiceBus.AgeMonitor/EIE.ServiceBus.AgeMonitor.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/EIE.ServiceBus.AgeMonitor.Tests/EIE.ServiceBus.AgeMonitor.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/EIE.ServiceBus.AgeMonitor.ScenarioGenerator/EIE.ServiceBus.AgeMonitor.ScenarioGenerator.csproj" />
+  </Folder>
+</Solution>

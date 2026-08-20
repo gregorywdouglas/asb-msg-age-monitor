@@ -1,0 +1,94 @@
+{
+  "format": 1,
+  "restore": {
+    "D:\\Source\\asb-msg-age-monitor\\src\\EIE.ServiceBus.AgeMonitor\\obj\\Debug\\net10.0\\WorkerExtensions\\WorkerExtensions.csproj": {}
+  },
+  "projects": {
+    "D:\\Source\\asb-msg-age-monitor\\src\\EIE.ServiceBus.AgeMonitor\\obj\\Debug\\net10.0\\WorkerExtensions\\WorkerExtensions.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "D:\\Source\\asb-msg-age-monitor\\src\\EIE.ServiceBus.AgeMonitor\\obj\\Debug\\net10.0\\WorkerExtensions\\WorkerExtensions.csproj",
+        "projectName": "Microsoft.Azure.Functions.Worker.Extensions",
+        "projectPath": "D:\\Source\\asb-msg-age-monitor\\src\\EIE.ServiceBus.AgeMonitor\\obj\\Debug\\net10.0\\WorkerExtensions\\WorkerExtensions.csproj",
+        "packagesPath": "C:\\Users\\GregoryWDouglas\\.nuget\\packages\\",
+        "outputPath": "D:\\Source\\asb-msg-age-monitor\\src\\EIE.ServiceBus.AgeMonitor\\obj\\Debug\\net10.0\\WorkerExtensions\\obj\\",
+        "projectStyle": "PackageReference",
+        "configFilePaths": [
+          "C:\\Users\\GregoryWDouglas\\AppData\\Roaming\\NuGet\\NuGet.Config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0"
+        ],
+        "sources": {
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0": {
+            "framework": "net8.0",
+            "targetAlias": "net8.0",
+            "projectReferences": {}
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        },
+        "SdkAnalysisLevel": "10.0.300"
+      },
+      "frameworks": {
+        "net8.0": {
+          "framework": "net8.0",
+          "targetAlias": "net8.0",
+          "dependencies": {
+            "Microsoft.NET.Sdk.Functions": {
+              "target": "Package",
+              "version": "[4.6.0, )"
+            },
+            "Microsoft.NETCore.Targets": {
+              "suppressParent": "All",
+              "target": "Package",
+              "version": "[3.0.0, )"
+            }
+          },
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "downloadDependencies": [
+            {
+              "name": "Microsoft.AspNetCore.App.Ref",
+              "version": "[8.0.28, 8.0.28]"
+            },
+            {
+              "name": "Microsoft.NETCore.App.Ref",
+              "version": "[8.0.28, 8.0.28]"
+            },
+            {
+              "name": "Microsoft.WindowsDesktop.App.Ref",
+              "version": "[8.0.28, 8.0.28]"
+            }
+          ],
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.301/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    }
+  }
+}

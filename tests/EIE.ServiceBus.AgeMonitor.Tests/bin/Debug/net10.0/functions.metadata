@@ -1,0 +1,21 @@
+[
+  {
+    "name": "MessageAgeMonitor",
+    "scriptFile": "EIE.ServiceBus.AgeMonitor.dll",
+    "entryPoint": "EIE.ServiceBus.AgeMonitor.Functions.MessageAgeMonitorFunction.RunAsync",
+    "language": "dotnet-isolated",
+    "properties": {
+      "IsCodeless": false
+    },
+    "bindings": [
+      {
+        "name": "timer",
+        "direction": "In",
+        "type": "timerTrigger",
+        "schedule": "%MonitorSchedule%",
+        "runOnStartup": false,
+        "properties": {}
+      }
+    ]
+  }
+]

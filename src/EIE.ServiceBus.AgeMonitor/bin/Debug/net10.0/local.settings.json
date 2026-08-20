@@ -1,0 +1,33 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
+
+    "MonitorSchedule": "0 */1 * * * *",
+
+    "ServiceBus:FullyQualifiedNamespace": "sb-eie-dev.servicebus.windows.net",
+    "ServiceBus:SubscriptionId": "00000000-0000-0000-0000-000000000000",
+    "ServiceBus:ResourceGroup": "rg-eie-dev",
+    "ServiceBus:NamespaceName": "sb-eie-dev",
+
+    "Monitor:SourceRegion": "eastus2",
+    "Monitor:Environment": "dev",
+
+    "AppConfig:Endpoint": "",
+    "AppConfig:SentinelKey": "asbmon:sentinel",
+    "AppConfig:RefreshIntervalSeconds": "30",
+
+    "Lease:StorageAccountUri": "https://steieasbmonlease.blob.core.windows.net",
+    "Lease:ContainerName": "asbmon-lease",
+    "Lease:BlobName": "primary",
+
+    "Telemetry:DceEndpoint": "https://dce-eie-dev.eastus2-1.ingest.monitor.azure.com",
+    "Telemetry:DcrImmutableId": "dcr-0000000000000000000000000000000",
+    "Telemetry:MeasurementStream": "Custom-ServiceBusMessageAge_CL",
+    "Telemetry:HealthStream": "Custom-ServiceBusMonitorHealth_CL",
+    "Telemetry:MetricNamespace": "EIE.ServiceBus",
+
+    "Hashing:Salt": "local-development-salt-not-for-production"
+  }
+}
