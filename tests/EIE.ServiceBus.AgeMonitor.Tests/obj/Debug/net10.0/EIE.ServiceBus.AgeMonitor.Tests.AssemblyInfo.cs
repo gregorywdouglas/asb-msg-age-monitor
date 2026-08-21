@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("EIE.ServiceBus.AgeMonitor.Tests")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+19554673410d02f2a2da2baf9c597369f636c4cf")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+f82614f091b01febd38ed385c2631a8894ff4c46")]
 [assembly: System.Reflection.AssemblyProductAttribute("EIE.ServiceBus.AgeMonitor.Tests")]
 [assembly: System.Reflection.AssemblyTitleAttribute("EIE.ServiceBus.AgeMonitor.Tests")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
