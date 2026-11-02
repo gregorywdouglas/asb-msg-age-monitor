@@ -27,7 +27,7 @@ public sealed class ZeroResultCorroborator
 
     public MeasurementStatus Corroborate(
         string entityPath,
-        long currentActiveCount,
+        long? currentActiveCount,
         bool throttleObservedThisTick)
     {
         // A throttle anywhere in this tick invalidates every zero it produced.
@@ -44,7 +44,8 @@ public sealed class ZeroResultCorroborator
         }
 
         // Already corroborated on a previous tick — a trusted Empty stays trusted.
-        if (_state.GetPreviousStatus(entityPath) == MeasurementStatus.Empty)
+        var previousStatus = _state.GetPreviousStatus(entityPath);
+        if (previousStatus == MeasurementStatus.Empty)
         {
             return MeasurementStatus.Empty;
         }
@@ -53,6 +54,14 @@ public sealed class ZeroResultCorroborator
         // drain; it is equally consistent with the broker having stopped answering.
         var previousActive = _state.GetPreviousActiveCount(entityPath);
         if (previousActive is > 0)
+        {
+            return MeasurementStatus.Indeterminate;
+        }
+
+        // SPEC-DEVIATION-008. Without counts, a previous tick whose peek found messages
+        // is the only evidence of prior depth left.
+        if (currentActiveCount is null &&
+            previousStatus is MeasurementStatus.Measured or MeasurementStatus.Degraded or MeasurementStatus.HeadBlockedByDeferred)
         {
             return MeasurementStatus.Indeterminate;
         }

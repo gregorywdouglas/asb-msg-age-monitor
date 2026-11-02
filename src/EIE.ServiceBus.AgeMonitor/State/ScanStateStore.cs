@@ -95,14 +95,15 @@ public sealed class ScanStateStore : IScanStateStore
         MeasurementStatus status,
         long? headSequence,
         double? ageSeconds,
-        long activeCount)
+        long? activeCount)
     {
         var state = _state.GetOrAdd(entityPath, static _ => new EntityScanState());
 
         // Spec §3.7. The stall counter advances only across ticks that were genuinely
         // measured with messages present: an empty queue trivially has an unchanging
         // head, and a stall inferred across an Indeterminate gap is guessed, not observed.
-        if (status == MeasurementStatus.Measured && activeCount > 0 && headSequence is { } head)
+        // An unknown count is not an empty queue: Measured already proves a message exists.
+        if (status == MeasurementStatus.Measured && activeCount is null or > 0 && headSequence is { } head)
         {
             state.StalledTickCount = state.PreviousHeadSequence == head
                 ? state.StalledTickCount + 1
@@ -113,7 +114,7 @@ public sealed class ScanStateStore : IScanStateStore
             state.StalledTickCount = 0;
         }
 
-        state.ZeroStreak = activeCount == 0 && status is MeasurementStatus.Empty or MeasurementStatus.Indeterminate
+        state.ZeroStreak = activeCount is null or 0 && status is MeasurementStatus.Empty or MeasurementStatus.Indeterminate
             ? state.ZeroStreak + 1
             : 0;
 

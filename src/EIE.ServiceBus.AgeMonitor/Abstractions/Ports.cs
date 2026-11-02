@@ -44,7 +44,10 @@ public interface IEntityFaultClassifier
     EntityFaultKind Classify(Exception exception);
 }
 
-/// <summary>Raw entity enumeration from the ARM management plane. Spec §10.3.</summary>
+/// <summary>
+/// Raw entity enumeration from the catalog the deployment pipeline publishes to App
+/// Configuration. Spec §10.3 / SPEC-DEVIATION-008.
+/// </summary>
 public interface IEntityCatalog
 {
     Task<IReadOnlyList<EntityDescriptor>> ListEntitiesAsync(CancellationToken ct);
@@ -124,7 +127,7 @@ public interface IScanStateStore
         MeasurementStatus status,
         long? headSequence,
         double? ageSeconds,
-        long activeCount);
+        long? activeCount);
 
     void Forget(string entityPath);
 }

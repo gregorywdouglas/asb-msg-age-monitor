@@ -21,7 +21,7 @@ param environmentName string
 @description('Fully qualified Service Bus namespace, geo-replicated so it follows the current primary.')
 param serviceBusFullyQualifiedNamespace string
 
-@description('Service Bus namespace name (ARM).')
+@description('Service Bus namespace name.')
 param serviceBusNamespaceName string
 
 @description('Resource group holding the Service Bus namespace.')
@@ -67,10 +67,6 @@ var namePrefix = 'asbmon-${environmentName}-${sourceRegion}'
 
 // Spec §10.3. Built-in role definition ids.
 var roles = {
-  // Reader at namespace scope covers ARM entity enumeration. Deliberately NOT Data
-  // Owner: ServiceBusAdministrationClient would require it, which is why discovery goes
-  // through the ARM plane instead.
-  reader: 'acdd72a7-3385-48ef-bd42-f606fba81ae7'
   // The smallest built-in role that permits peek. It also grants receive and complete,
   // which is why TST-070 fails the build on any receive-family symbol (spec OPN-003).
   serviceBusDataReceiver: '4f6d3b9b-027b-4f4c-9142-0e5a2a2247e0'
@@ -225,8 +221,6 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
         { name: 'MonitorSchedule', value: monitorSchedule }
 
         { name: 'ServiceBus:FullyQualifiedNamespace', value: serviceBusFullyQualifiedNamespace }
-        { name: 'ServiceBus:SubscriptionId', value: subscription().subscriptionId }
-        { name: 'ServiceBus:ResourceGroup', value: serviceBusResourceGroup }
         { name: 'ServiceBus:NamespaceName', value: serviceBusNamespaceName }
 
         { name: 'Monitor:SourceRegion', value: sourceRegion }
@@ -268,7 +262,6 @@ module serviceBusRoles 'modules/servicebus-roles.bicep' = {
   params: {
     serviceBusNamespaceName: serviceBusNamespaceName
     principalId: functionApp.identity.principalId
-    readerRoleId: roles.reader
     dataReceiverRoleId: roles.serviceBusDataReceiver
   }
 }

@@ -15,8 +15,6 @@ public sealed class ServiceBusFaultClassifier : IEntityFaultClassifier
 {
     public EntityFaultKind Classify(Exception exception) => exception switch
     {
-        EntityNotFoundInSnapshotException => EntityFaultKind.NotFound,
-
         ServiceBusException { Reason: ServiceBusFailureReason.MessagingEntityNotFound } =>
             EntityFaultKind.NotFound,
 

@@ -56,17 +56,19 @@ public sealed class InfrastructureConformanceTests
 
         // Spec §10.3. Azure Service Bus Data Owner would let the monitor manage entities
         // as well as consume them, and is what ServiceBusAdministrationClient would have
-        // required — avoiding it is the reason discovery goes through the ARM plane.
+        // required. Reader is absent because discovery reads the published catalog, not
+        // ARM (SPEC-DEVIATION-008).
         const string dataOwnerRoleId = "090c5cfd-751d-490a-894a-3ce6f1109419";
         const string dataSenderRoleId = "69a216fc-b8fb-44d8-bc22-1f3c2cd27a39";
+        const string readerRoleId = "acdd72a7-3385-48ef-bd42-f606fba81ae7";
 
         Assert.DoesNotContain(dataOwnerRoleId, main, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(dataSenderRoleId, main, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(readerRoleId, main, StringComparison.OrdinalIgnoreCase);
 
         // The exact set the spec permits.
         var expected = new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            ["reader"] = "acdd72a7-3385-48ef-bd42-f606fba81ae7",
             ["serviceBusDataReceiver"] = "4f6d3b9b-027b-4f4c-9142-0e5a2a2247e0",
             ["storageBlobDataContributor"] = "ba92f5b4-2d11-453d-a403-e96b0029c9fe",
             ["monitoringMetricsPublisher"] = "3913510d-42f4-4e42-8a64-420c390055eb",
@@ -78,6 +80,19 @@ public sealed class InfrastructureConformanceTests
         {
             Assert.Contains($"{name}: '{id}'", main, StringComparison.Ordinal);
         }
+    }
+
+    [Fact(DisplayName = "SPEC-DEVIATION-008 the catalog is written and read under the namespace label, so a shared store cannot mix namespaces")]
+    public void Dev008_CatalogIsLabelledByNamespace()
+    {
+        // Entity paths are namespace-relative. Unlabelled, two namespaces in one store
+        // overwrite each other, and one's strict import deletes the other's catalog.
+        var script = File.ReadAllText(RepoFile("infra/pipeline/Publish-EntityCatalog.ps1"));
+        var program = File.ReadAllText(RepoFile("src/EIE.ServiceBus.AgeMonitor/Program.cs"));
+
+        Assert.Contains("--label $ServiceBusNamespaceName", script, StringComparison.Ordinal);
+        Assert.Contains("--strict", script, StringComparison.Ordinal);
+        Assert.Contains(".Select(AppConfigEntityCatalog.CatalogKeyFilter, settings.NamespaceName)", program, StringComparison.Ordinal);
     }
 
     [Fact(DisplayName = "TST-072b the identity is system-assigned, so no secret exists to leak")]

@@ -1,0 +1,22 @@
+﻿source
+| project
+    TimeGenerated = todatetime(TimeGenerated),
+    TickId = tostring(TickId),
+    SourceRegion = tostring(SourceRegion),
+    Environment = tostring(Environment),
+    EventType = tostring(EventType),
+    Severity = tostring(Severity),
+    IsLeaseHolder = tobool(IsLeaseHolder),
+    LeaseHolder = tostring(LeaseHolder),
+    DiscoveredEntities = toint(DiscoveredEntities),
+    MeasuredEntities = toint(MeasuredEntities),
+    IndeterminateEntities = toint(IndeterminateEntities),
+    SkippedEntities = toint(SkippedEntities),
+    BlockedEntities = toint(BlockedEntities),
+    TickDurationMs = tolong(TickDurationMs),
+    DegradationLevel = toint(DegradationLevel),
+    ConfigSource = tostring(ConfigSource),
+    AppInsightsEmitOk = tobool(AppInsightsEmitOk),
+    LogsIngestionEmitOk = tobool(LogsIngestionEmitOk),
+    EntityPath = tostring(EntityPath),
+    Detail = tostring(Detail)

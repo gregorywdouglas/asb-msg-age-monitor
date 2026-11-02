@@ -243,7 +243,10 @@ internal sealed class FakeMetricSink : IMetricSink
                 }
             }
 
-            Points.Add(("ActiveMessageCount", record.Runtime.ActiveMessageCount, record.Entity.EntityPath));
+            if (record.Runtime.ActiveMessageCount is { } active)
+            {
+                Points.Add(("ActiveMessageCount", active, record.Entity.EntityPath));
+            }
         }
 
         Points.Add(("MonitorHeartbeat", 1d, string.Empty));

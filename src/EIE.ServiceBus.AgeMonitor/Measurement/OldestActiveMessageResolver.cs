@@ -113,6 +113,14 @@ public sealed class OldestActiveMessageResolver : IOldestActiveMessageResolver
     /// </summary>
     private void InvalidateResumePointIfStale(string entityPath, EntityRuntimeInfo runtime)
     {
+        // SPEC-DEVIATION-008. Without counts neither invalidation trigger can be
+        // evaluated, so no resume point is trusted: every scan starts at the head.
+        if (runtime.ActiveMessageCount is null)
+        {
+            _state.Invalidate(entityPath, "runtime counts unavailable");
+            return;
+        }
+
         var previousActive = _state.GetPreviousActiveCount(entityPath);
 
         if (previousActive is { } previous && runtime.ActiveMessageCount < previous)

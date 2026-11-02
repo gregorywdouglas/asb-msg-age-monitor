@@ -168,6 +168,8 @@ public sealed class MeasurementRecordFactory
             return false;
         }
 
+        // An unknown count does not block a stall: a Measured status already proves an
+        // Active message exists (SPEC-DEVIATION-008).
         if (inputs.Runtime.ActiveMessageCount <= 0)
         {
             return false;

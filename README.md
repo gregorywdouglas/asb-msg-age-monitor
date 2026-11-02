@@ -38,6 +38,7 @@ tests/EIE.ServiceBus.AgeMonitor.Tests/
 tools/EIE.ServiceBus.AgeMonitor.ScenarioGenerator/   staging synthetic scenarios
 infra/                                Bicep: tables, DCR, alert rules, RBAC, policy
 infra/schema/                         column definitions shared by code, tables and DCR
+infra/pipeline/                       deployment-pipeline steps, e.g. publishing the entity catalog
 ```
 
 ## Build and test

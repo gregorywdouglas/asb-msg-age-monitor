@@ -67,14 +67,19 @@ public sealed record EntityDescriptor(
     public AgeAccuracy Accuracy => IsPartitioned ? AgeAccuracy.BestEffort : AgeAccuracy.Exact;
 }
 
+/// <summary>
+/// Broker-reported message counts. A <c>null</c> count means no source was available
+/// (SPEC-DEVIATION-008) and is never the same as zero: a fabricated zero reads as an
+/// empty queue (NFR-001).
+/// </summary>
 public sealed record EntityRuntimeInfo(
-    long ActiveMessageCount,
-    long DeadLetterMessageCount,
-    long ScheduledMessageCount,
-    long TransferDeadLetterMessageCount,
+    long? ActiveMessageCount,
+    long? DeadLetterMessageCount,
+    long? ScheduledMessageCount,
+    long? TransferDeadLetterMessageCount,
     DateTimeOffset ReadAtUtc)
 {
-    public static EntityRuntimeInfo Unknown(DateTimeOffset at) => new(0, 0, 0, 0, at);
+    public static EntityRuntimeInfo Unknown(DateTimeOffset at) => new(null, null, null, null, at);
 }
 
 public sealed record ThresholdSet(int Sev2Seconds, int Sev1Seconds, ThresholdSource Source);
