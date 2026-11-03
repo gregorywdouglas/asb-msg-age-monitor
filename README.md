@@ -52,7 +52,10 @@ nothing and ALR-032 fires.
 
 - **Deployed:** run the script as the last step of every pipeline that changes entities,
   and on an hourly schedule as a backstop.
-- **Local:** set `AppConfig:Endpoint` in `local.settings.json` to a store that holds a
+- **Local:** copy `src/EIE.ServiceBus.AgeMonitor/local.settings.example.json` to
+  `local.settings.json` in the same folder and set your own `Hashing:Salt`; the copy is
+  git-ignored so the salt stays out of the repo. Then set `AppConfig:Endpoint` in it to a
+  store that holds a
   published catalog for `ServiceBus:NamespaceName`. With no endpoint there is no catalog.
 
 App settings in `local.settings.json` use `:`; deployed app settings use `__`, because
