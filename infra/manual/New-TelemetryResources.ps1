@@ -17,6 +17,13 @@
     The hourly rollup table and summary rule (spec §8.4) are not created here; ingestion
     does not depend on them.
 
+    The *-sample.json and *-transform.kql files beside this script are for the portal's
+    "New custom log (DCR-based)" wizard, the route when neither this script nor Bicep can
+    be run. Upload the sample to define the table and paste the transform. Both mirror
+    infra/schema/*.json column for column; the sample values are chosen so the wizard
+    infers each type correctly (3000000000 forces long). A test keeps them in step with
+    the schema.
+
     Idempotent: re-running updates the resources in place.
 
 .EXAMPLE
@@ -31,7 +38,8 @@ param(
     [int] $InteractiveRetentionDays = 90,
     [int] $TotalRetentionDays = 730,
 
-    # Object ids (managed identities, users) to grant Monitoring Metrics Publisher on the DCR.
+    # Object ids of managed identities or service principals to grant Monitoring Metrics
+    # Publisher on the DCR. Use -GrantSignedInUser for yourself.
     [string[]] $PublisherObjectIds = @(),
 
     # Also grant the signed-in az user, so a local debug session can ingest.
@@ -155,14 +163,20 @@ $dcr = Invoke-ArmRest PUT "$arm$rgPath/providers/Microsoft.Insights/dataCollecti
 }
 
 # --- Monitoring Metrics Publisher on the DCR ----------------------------------------
+$publishers = @($PublisherObjectIds | ForEach-Object { @{ Id = $_; Type = 'ServicePrincipal' } })
 if ($GrantSignedInUser) {
-    $PublisherObjectIds += Invoke-Az ad signed-in-user show --query id -o tsv
+    $publishers += @{ Id = (Invoke-Az ad signed-in-user show --query id -o tsv); Type = 'User' }
 }
-foreach ($objectId in $PublisherObjectIds) {
-    Write-Host "Granting Monitoring Metrics Publisher on $dcrName to $objectId..."
-    $existing = Invoke-Az role assignment list --assignee $objectId --role 'Monitoring Metrics Publisher' --scope $dcr.id --query '[].id' -o tsv
+foreach ($publisher in $publishers) {
+    Write-Host "Granting Monitoring Metrics Publisher on $dcrName to $($publisher.Id)..."
+    # --assignee would resolve the id through Microsoft Graph first, which fails where the
+    # caller cannot read the directory and for a managed identity not yet replicated.
+    # List filters by principalId client-side for the same reason.
+    $existing = Invoke-Az role assignment list --role 'Monitoring Metrics Publisher' --scope $dcr.id `
+        --query "[?principalId=='$($publisher.Id)'].id" -o tsv
     if (-not $existing) {
-        Invoke-Az role assignment create --assignee $objectId --role 'Monitoring Metrics Publisher' --scope $dcr.id | Out-Null
+        Invoke-Az role assignment create --role 'Monitoring Metrics Publisher' --scope $dcr.id `
+            --assignee-object-id $publisher.Id --assignee-principal-type $publisher.Type | Out-Null
     }
 }
 
@@ -170,3 +184,5 @@ Write-Host ''
 Write-Host 'Settings for the function (local.settings.json uses ":", Azure app settings use "__"):'
 Write-Host "  Telemetry:DceEndpoint   = $($dce.properties.logsIngestion.endpoint)"
 Write-Host "  Telemetry:DcrImmutableId = $($dcr.properties.immutableId)"
+Write-Host ''
+Write-Host 'Not created: the hourly rollup table ServiceBusMessageAgeHourly_CL and its summary rule (spec §8.4).'

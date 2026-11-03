@@ -157,7 +157,63 @@ public sealed class InfrastructureConformanceTests
         Assert.Contains("totalRetentionDays int = 730", telemetry, StringComparison.Ordinal);
     }
 
+    [Theory(DisplayName = "TST-060f the portal-wizard sample and transform match the shared column schema")]
+    [InlineData("measurement")]
+    [InlineData("health")]
+    public void Tst060f_ManualPortalFilesMatchSchema(string kind)
+    {
+        // infra/manual is the fallback when neither Bicep nor the script can run. It is a
+        // hand-kept copy of the schema, so without this it drifts on the next new column.
+        using var schema = JsonDocument.Parse(File.ReadAllText(RepoFile($"infra/schema/{kind}-columns.json")));
+        var columns = schema.RootElement.EnumerateArray()
+            .Select(e => (Name: e.GetProperty("name").GetString()!, Type: e.GetProperty("type").GetString()!))
+            .ToList();
+
+        var kql = File.ReadAllText(RepoFile($"infra/manual/{kind}-transform.kql"));
+        var projected = System.Text.RegularExpressions.Regex.Matches(kql, @"(\w+) = to(\w+)\(")
+            .Select(m => (Name: m.Groups[1].Value, Type: KqlCastToSchemaType(m.Groups[2].Value)))
+            .ToList();
+
+        Assert.Equal(columns, projected);
+
+        using var sample = JsonDocument.Parse(File.ReadAllText(RepoFile($"infra/manual/{kind}-sample.json")));
+        var row = sample.RootElement.EnumerateArray().Single().EnumerateObject().ToList();
+
+        Assert.Equal(columns.Select(c => c.Name), row.Select(p => p.Name));
+
+        // The wizard infers each column's type from the sample value.
+        foreach (var (column, value) in columns.Zip(row.Select(p => p.Value)))
+        {
+            var inferred = value.ValueKind switch
+            {
+                JsonValueKind.True or JsonValueKind.False => "boolean",
+                JsonValueKind.String => DateTimeOffset.TryParse(value.GetString(), out _) ? "datetime" : "string",
+                JsonValueKind.Number when !value.TryGetInt64(out _) => "real",
+                JsonValueKind.Number when !value.TryGetInt32(out _) => "long",
+                JsonValueKind.Number => "int",
+                _ => value.ValueKind.ToString()
+            };
+
+            Assert.True(inferred == column.Type, $"{kind}-sample.json: {column.Name} would be inferred as {inferred}, schema says {column.Type}");
+        }
+    }
+
+    [Fact(DisplayName = "CFG-001 app setting names use '__', because Flex Consumption runs on Linux where ':' is not allowed")]
+    public void Cfg001_AppSettingNamesHaveNoColon()
+    {
+        var main = File.ReadAllText(RepoFile("infra/main.bicep"));
+
+        // 'function:<name>' under alwaysReady is Flex syntax, not an app setting.
+        var colonNames = System.Text.RegularExpressions.Regex.Matches(main, @"name: '(?!function:)([A-Za-z]+:[A-Za-z]+)'")
+            .Select(m => m.Groups[1].Value)
+            .ToList();
+
+        Assert.True(colonNames.Count == 0, $"App settings with ':' are not delivered on Linux: {string.Join(", ", colonNames)}");
+    }
+
     // ---- helpers --------------------------------------------------------------
+
+    private static string KqlCastToSchemaType(string cast) => cast == "bool" ? "boolean" : cast;
 
     private static List<string> LoadColumnNames(string relativePath)
     {

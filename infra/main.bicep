@@ -220,28 +220,28 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
 
         { name: 'MonitorSchedule', value: monitorSchedule }
 
-        { name: 'ServiceBus:FullyQualifiedNamespace', value: serviceBusFullyQualifiedNamespace }
-        { name: 'ServiceBus:NamespaceName', value: serviceBusNamespaceName }
+        { name: 'ServiceBus__FullyQualifiedNamespace', value: serviceBusFullyQualifiedNamespace }
+        { name: 'ServiceBus__NamespaceName', value: serviceBusNamespaceName }
 
-        { name: 'Monitor:SourceRegion', value: sourceRegion }
-        { name: 'Monitor:Environment', value: environmentName }
+        { name: 'Monitor__SourceRegion', value: sourceRegion }
+        { name: 'Monitor__Environment', value: environmentName }
 
-        { name: 'AppConfig:Endpoint', value: appConfig.properties.endpoint }
-        { name: 'AppConfig:SentinelKey', value: 'asbmon:sentinel' }
-        { name: 'AppConfig:RefreshIntervalSeconds', value: '30' }
+        { name: 'AppConfig__Endpoint', value: appConfig.properties.endpoint }
+        { name: 'AppConfig__SentinelKey', value: 'asbmon:sentinel' }
+        { name: 'AppConfig__RefreshIntervalSeconds', value: '30' }
 
-        { name: 'Lease:StorageAccountUri', value: leaseStorageAccountUri }
-        { name: 'Lease:ContainerName', value: 'asbmon-lease' }
-        { name: 'Lease:BlobName', value: 'primary' }
+        { name: 'Lease__StorageAccountUri', value: leaseStorageAccountUri }
+        { name: 'Lease__ContainerName', value: 'asbmon-lease' }
+        { name: 'Lease__BlobName', value: 'primary' }
 
-        { name: 'Telemetry:DceEndpoint', value: telemetry.outputs.dceEndpoint }
-        { name: 'Telemetry:DcrImmutableId', value: telemetry.outputs.dcrImmutableId }
-        { name: 'Telemetry:MeasurementStream', value: 'Custom-ServiceBusMessageAge_CL' }
-        { name: 'Telemetry:HealthStream', value: 'Custom-ServiceBusMonitorHealth_CL' }
-        { name: 'Telemetry:MetricNamespace', value: 'EIE.ServiceBus' }
+        { name: 'Telemetry__DceEndpoint', value: telemetry.outputs.dceEndpoint }
+        { name: 'Telemetry__DcrImmutableId', value: telemetry.outputs.dcrImmutableId }
+        { name: 'Telemetry__MeasurementStream', value: 'Custom-ServiceBusMessageAge_CL' }
+        { name: 'Telemetry__HealthStream', value: 'Custom-ServiceBusMonitorHealth_CL' }
+        { name: 'Telemetry__MetricNamespace', value: 'EIE.ServiceBus' }
 
         {
-          name: 'Hashing:Salt'
+          name: 'Hashing__Salt'
           value: '@Microsoft.KeyVault(VaultName=${keyVaultName};SecretName=asbmon-hash-salt)'
         }
       ]
