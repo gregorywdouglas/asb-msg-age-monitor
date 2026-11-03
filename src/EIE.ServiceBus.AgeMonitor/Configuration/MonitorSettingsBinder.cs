@@ -9,8 +9,6 @@ public static class MonitorSettingsBinder
     public static void Bind(IConfiguration configuration, MonitorSettings settings)
     {
         settings.FullyQualifiedNamespace = Read("ServiceBus:FullyQualifiedNamespace", settings.FullyQualifiedNamespace);
-        settings.SubscriptionId = Read("ServiceBus:SubscriptionId", settings.SubscriptionId);
-        settings.ResourceGroup = Read("ServiceBus:ResourceGroup", settings.ResourceGroup);
         settings.NamespaceName = Read("ServiceBus:NamespaceName", settings.NamespaceName);
 
         settings.SourceRegion = Read("Monitor:SourceRegion", settings.SourceRegion);

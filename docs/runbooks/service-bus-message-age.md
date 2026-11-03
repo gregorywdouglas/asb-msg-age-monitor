@@ -43,6 +43,12 @@ portal**. Before anything else, read these fields:
 | `MeasurementContext` | `PostFailover` means a namespace promotion happened recently |
 | `TransferDeadLetterMessageCount` | Auto-forwarding is failing |
 
+> **Counts are always blank.** The monitor gets its entity list from a
+> catalog the deployment pipeline publishes, not from ARM, so it has no source for message
+> counts (spec SPEC-DEVIATION-008). `ActiveMessageCount`, `DeadLetterMessageCount` and
+> `TransferDeadLetterMessageCount` are **empty, meaning unknown — not zero**. Use the
+> portal's namespace metrics if you need depth.
+
 ---
 
 ## 3. Decision branches
@@ -75,6 +81,9 @@ ticks while the queue holds messages. This is an observation, not an inference.
 
 Messages *are* moving — the head advances between ticks — but arrivals exceed
 departures.
+
+If `ActiveMessageCount` is blank (see §2), take this branch when age is rising and the
+head is not stalled. Confirm the backlog from the namespace's Active Messages metric.
 
 **Actions:**
 1. Check the L2 consumer-side dequeue latency for this entity.
@@ -130,6 +139,10 @@ accumulate, and near-zero RPO means someone must confirm the backlog drained.
 is a **different entity** from the normal DLQ and is not covered by the L3 backstop
 (OPN-012).
 
+> **ALR-022 cannot fire in the default deployment**, because the count it reads is always
+> blank (SPEC-DEVIATION-008). Until that gap is closed, auto-forward failures surface only
+> indirectly, as age rising on the source entity while the target looks idle.
+
 **Actions:**
 1. Check that `ForwardTarget` still exists and is not disabled or over quota.
 2. If the destination was deleted, restore it or clear `ForwardTo` on the source.
@@ -160,6 +173,8 @@ simply have no idea, which is the point.
 | `UnsupportedEntityConfiguration` (ALR-023) | A partitioned entity exists. | Its age is a **lower bound**; absence of breach is not evidence of health. Escalate to have it recreated non-partitioned. |
 | ALR-030 / ALR-032 | **The monitor is dead.** No heartbeat, no rows. | Highest priority. Message-age detection is entirely dark. Check the function app in both regions. |
 | ALR-031 | The monitor is running and emitting, but measured nothing. | Different incident from a dead monitor. Usually credentials or namespace reachability. |
+| An entity has no rows, or a deleted entity keeps reporting `EntityNotFound` | The entity catalog in App Configuration is out of date. The monitor measures exactly what the catalog lists. | Re-run the pipeline's `Publish-EntityCatalog.ps1` step. Check `asbmon:catalog:publishedAtUtc` **under the label equal to the namespace name** to see when it last ran; the store may hold other namespaces' catalogs under other labels. |
+| ALR-032 straight after a first deployment | No catalog has been published yet, so there is nothing to measure. Function logs show `No entities under 'asbmon:catalog:entities'`. | Run `Publish-EntityCatalog.ps1`. |
 
 ---
 
@@ -184,5 +199,5 @@ simply have no idea, which is the point.
 | OPN-006 | This runbook is unreviewed and no on-call rotation is confirmed. Sev1 should not page until it is. |
 | OPN-007 | Per-entity business-impact statements are missing, so alert text cannot say what actually breaks. Branches still work; the escalation target may not be obvious. |
 | OPN-010 | If the L2 dequeue-latency layer is not deployed, §3.3 cannot distinguish "consumer slow" from "downstream slow" and degrades to escalate-and-investigate. |
-| OPN-012 | Whether L3 observes the transfer DLQ is unconfirmed. §3.7 relies on ALR-022 covering it independently. |
+| OPN-012 | Whether L3 observes the transfer DLQ is unconfirmed. §3.7 relies on ALR-022 covering it independently, and ALR-022 is inert in the default deployment (SPEC-DEVIATION-008), so the transfer DLQ is currently **unmonitored**. |
 | ALR-040 | Azure alert processing rules cannot express correlation grouping declaratively. During a namespace failover, expect **N separate alerts** rather than one grouped incident. Treat a burst that shares a timestamp and `MeasurementContext=PostFailover` as one event. |

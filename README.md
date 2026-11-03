@@ -38,7 +38,28 @@ tests/EIE.ServiceBus.AgeMonitor.Tests/
 tools/EIE.ServiceBus.AgeMonitor.ScenarioGenerator/   staging synthetic scenarios
 infra/                                Bicep: tables, DCR, alert rules, RBAC, policy
 infra/schema/                         column definitions shared by code, tables and DCR
+infra/pipeline/                       deployment-pipeline steps, e.g. publishing the entity catalog
+infra/manual/                         telemetry setup without a template deployment: script, plus portal-wizard files
 ```
+
+## Before it measures anything
+
+The function does not enumerate Service Bus itself: ARM is not available to it (spec
+SPEC-DEVIATION-008). It measures exactly the entities listed in a catalog that
+`infra/pipeline/Publish-EntityCatalog.ps1` publishes to App Configuration, labelled with
+the namespace name. Until that script has run for a namespace, the monitor measures
+nothing and ALR-032 fires.
+
+- **Deployed:** run the script as the last step of every pipeline that changes entities,
+  and on an hourly schedule as a backstop.
+- **Local:** copy `src/EIE.ServiceBus.AgeMonitor/local.settings.example.json` to
+  `local.settings.json` in the same folder and set your own `Hashing:Salt`; the copy is
+  git-ignored so the salt stays out of the repo. Then set `AppConfig:Endpoint` in it to a
+  store that holds a
+  published catalog for `ServiceBus:NamespaceName`. With no endpoint there is no catalog.
+
+App settings in `local.settings.json` use `:`; deployed app settings use `__`, because
+Flex Consumption runs on Linux.
 
 ## Build and test
 
@@ -96,5 +117,9 @@ The monitor, its tests and its infrastructure templates are implemented. Not yet
 - **OPN-006** — the runbook is unreviewed; Sev1 should not page until it is.
 - **OPN-016** — .NET 10 isolated on Flex Consumption and timer-singleton behaviour under
   Flex scaling both need verifying. Fallback is EP1 pinned to one instance.
+- **SPEC-DEVIATION-008** — without ARM there is no source for message counts. Count
+  columns are always blank (unknown, not zero), and **ALR-022 (auto-forward failure)
+  cannot fire** until it has one. The proposed fix peeks each entity's transfer
+  dead-letter queue, which the existing Data Receiver role already permits.
 
 Full register in the spec's open items section, and verification status in Appendix B.

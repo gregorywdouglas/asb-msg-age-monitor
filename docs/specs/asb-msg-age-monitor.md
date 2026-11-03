@@ -130,7 +130,8 @@ Coordination is **active/standby via a blob lease** ([FR-060](#fr-060)). The lea
 | Service Bus Premium namespace | **Critical** | No measurement possible. `Indeterminate` + monitor alert. |
 | Application Insights | **Critical** (alerting path) | Retry; failure recorded in LAW + `ILogger`. |
 | Log Analytics / DCE / DCR | High (analysis, SLA) | Retry; failure recorded in App Insights + `ILogger`. |
-| Azure App Configuration | Medium | Fall back to last-known-good, then compiled defaults. Never blocks. |
+| Azure App Configuration | Medium | Fall back to last-known-good, then compiled defaults. Never blocks. Also carries the entity catalog ([SPEC-DEVIATION-008](#appendix-b--implementation-deviations)); the last loaded catalog stays in force, and an empty one is refused. |
+| Entity catalog publish step (deployment pipeline) | High | A missed run leaves new entities unmonitored and deleted ones `EntityNotFound` until the next run. Not detected by the monitor. |
 | Lease storage account (ZRS, Central US) | **Low by design** | Fail open in both directions — every failure results in *more* monitoring, never less. |
 
 ---
@@ -176,6 +177,7 @@ Because a stale resume point could cause the scan to skip past a genuinely old A
 
 - `ActiveMessageCount` decreased since the previous tick
 - entity observed empty
+- runtime counts unavailable (catalog source, [SPEC-DEVIATION-008](#appendix-b--implementation-deviations)): neither trigger above can be evaluated, so every tick starts at the head
 - hard TTL of `ResumePointMaxTicks` (default 15) regardless of other conditions
 - process start
 
@@ -208,6 +210,8 @@ A throttled or degraded namespace can return zero counts and empty peek batches 
 zero or empty result:
     throttle exception observed this tick?      → Indeterminate
     prior tick depth > 0 with no drain evidence → Indeterminate
+      (counts unknown: prior tick Measured,
+       Degraded or HeadBlockedByDeferred      → Indeterminate)
     zero sustained ZeroCorroborationTicks (3)
         with no exceptions                      → Empty (trusted)
     otherwise                                   → Indeterminate
@@ -238,7 +242,7 @@ Distinct from age, and observed rather than predicted:
 ```
 ConsumptionStalled ⟺
       head SequenceNumber unchanged for StalledTicksForAlert (5) consecutive ticks
-  AND ActiveMessageCount > 0
+  AND ActiveMessageCount > 0   (or unknown: Measured already proves ≥ 1)
   AND MeasurementStatus == Measured for all K ticks
   AND NOT HeadBlockedByDeferred
 ```
@@ -255,9 +259,9 @@ This is a statement about the present, not a projection, which is why it can car
 
 | ID | Requirement |
 |---|---|
-| **FR-001** | The monitor SHALL discover all queues and topic subscriptions in the configured namespace dynamically, via the ARM management plane. |
+| **FR-001** | The monitor SHALL discover all queues and topic subscriptions in the configured namespace dynamically, from the entity catalog the deployment pipeline publishes to App Configuration. The function does not call ARM. See [SPEC-DEVIATION-008](#appendix-b--implementation-deviations). |
 | **FR-002** | Discovery results SHALL be cached for `DiscoveryCacheTtlSeconds` (default 300), with jitter of ±10 % so regional deployments do not synchronise management-plane calls. |
-| **FR-003** | A newly created entity SHALL be measured within `DiscoveryCacheTtlSeconds` of creation. |
+| **FR-003** | A newly created entity SHALL be measured within `DiscoveryCacheTtlSeconds` of creation. With the catalog source, the clock starts when the catalog is published, plus up to `AppConfig__RefreshIntervalSeconds`. |
 | **FR-004** | On `MessagingEntityNotFoundException` during peek, the monitor SHALL evict the entity from cache, suppress its alerts, and emit `EntityDisappeared` (Sev4). |
 | **FR-005** | Deletion SHALL be confirmed in two phases: if the next discovery refresh omits the entity, it is tombstoned and emission stops silently; if present, emit `EntityRecovered` and resume. |
 | **FR-006** | Tombstones SHALL expire after `TombstoneTtlHours` (default 24), so a recreated entity of the same name is not permanently ignored. |
@@ -275,7 +279,7 @@ This is a statement about the present, not a projection, which is why it can car
 | **FR-014** | The monitor SHALL apply clock-skew detection per [§3.3](#33-clock-trust). |
 | **FR-015** | The monitor SHALL apply zero-result corroboration per [§3.5](#35-zero-result-ambiguity). |
 | **FR-016** | The monitor SHALL compute `ConsumptionStalled` per [§3.7](#37-stall-detection). |
-| **FR-017** | The monitor SHALL read entity runtime properties (`ActiveMessageCount`, `DeadLetterMessageCount`, `ScheduledMessageCount`, `TransferDeadLetterMessageCount`) each tick. |
+| **FR-017** | The monitor SHALL read entity runtime properties (`ActiveMessageCount`, `DeadLetterMessageCount`, `ScheduledMessageCount`, `TransferDeadLetterMessageCount`) each tick where a source is available. With the catalog source there is none; counts are reported as unknown (`null`), never zero. |
 
 ### 4.3 Tick orchestration
 
@@ -359,7 +363,7 @@ This is a statement about the present, not a projection, which is why it can car
 | **NFR-003** | Detection latency for an age breach SHALL be ≤ 90 s from breach (60 s sampling + metric alert evaluation), at `L0`. |
 | **NFR-004** | A tick SHALL complete within `TickDeadlineSeconds`; sampling degradation SHALL always be visible via `MonitorTickIncomplete`, never silent. |
 | **NFR-005** | Monitoring load SHALL remain below `MaxNamespaceMuSharePercent` (target 2 %) of namespace Messaging Units at P99. **Currently unquantified — see [OPN-002](#14-open-items-register).** |
-| **NFR-006** | The monitor SHALL hold no standing permission beyond what peek and ARM enumeration require. See [§10.3](#103-identity-and-rbac). |
+| **NFR-006** | The monitor SHALL hold no standing permission beyond what peek and entity enumeration require (no ARM role at all). See [§10.3](#103-identity-and-rbac). |
 | **NFR-007** | All timestamps SHALL be UTC. No local time or DST handling appears anywhere. |
 | **NFR-008** | The monitor SHALL be deployable to dev, staging and production from identical code, differing only by configuration. |
 | **NFR-009** | Staging SHALL run the same 60 s cadence as production, so timing-sensitive logic (resume points, hysteresis counters, deadline handling) is exercised at production rates. |
@@ -420,11 +424,12 @@ public sealed record EntityDescriptor(
     TimeSpan DefaultTimeToLive,
     CriticalityClass Class);
 
+// null = no count source (SPEC-DEVIATION-008); never conflated with zero.
 public sealed record EntityRuntimeInfo(
-    long ActiveMessageCount,
-    long DeadLetterMessageCount,
-    long ScheduledMessageCount,
-    long TransferDeadLetterMessageCount,
+    long? ActiveMessageCount,
+    long? DeadLetterMessageCount,
+    long? ScheduledMessageCount,
+    long? TransferDeadLetterMessageCount,
     DateTimeOffset ReadAtUtc);
 
 public sealed record ThresholdSet(
@@ -613,9 +618,9 @@ public sealed record TickResult(
 | Key | Type | Default | Notes |
 |---|---|---|---|
 | `CFG-001` `ServiceBus__FullyQualifiedNamespace` | string | — | Required. Geo-replicated FQDN. |
-| `CFG-002` `ServiceBus__SubscriptionId` | string | — | For ARM discovery. |
-| `CFG-003` `ServiceBus__ResourceGroup` | string | — | For ARM discovery. |
-| `CFG-004` `ServiceBus__NamespaceName` | string | — | For ARM discovery. |
+| `CFG-002` | — | — | Retired. Was the ARM subscription id; ARM is not available to the function (SPEC-DEVIATION-008). |
+| `CFG-003` | — | — | Retired. Was the ARM resource group; see CFG-002. |
+| `CFG-004` `ServiceBus__NamespaceName` | string | — | Recorded on every row. |
 | `CFG-005` `MonitorSchedule` | cron | `0 */1 * * * *` | 60 s cadence. |
 | `CFG-006` `Monitor__SourceRegion` | string | — | `eastus2` \| `centralus`. |
 | `CFG-007` `Monitor__Environment` | string | — | `dev` \| `staging` \| `prod`. |
@@ -631,6 +636,7 @@ public sealed record TickResult(
 | `CFG-017` `Telemetry__HealthStream` | string | `Custom-ServiceBusMonitorHealth_CL` | |
 | `CFG-018` `Telemetry__MetricNamespace` | string | `EIE.ServiceBus` | |
 | `CFG-019` `Hashing__SaltSecretName` | string | `asbmon-hash-salt` | Key Vault reference. |
+| `CFG-020` | — | — | Retired. Selected `AppConfig` or `Arm`; only the App Configuration catalog remains. See [SPEC-DEVIATION-008](#appendix-b--implementation-deviations). |
 
 ### 7.2 Runtime configuration (Azure App Configuration, no redeploy)
 
@@ -673,6 +679,19 @@ Prefix: `asbmon:`. All values validated per [FR-033](#44-thresholds-and-configur
 | `CFG-182` `emit:staleConfigMinutes` | int | `15` | 1–120 | |
 | `CFG-190` `maintenance:maxSuppressionHours` | int | `4` | 1–72 | Guard, not a mechanism. |
 
+**Entity catalog** ([SPEC-DEVIATION-008](#appendix-b--implementation-deviations)). Written only by `infra/pipeline/Publish-EntityCatalog.ps1` in the deployment pipeline, never edited by hand. Every catalog key carries an App Configuration **label equal to the namespace name**, because the store may be shared and entity paths are namespace-relative; the function loads unlabelled `asbmon:*` plus `asbmon:catalog:*` under its own `ServiceBus__NamespaceName` label, and fails startup if that setting is empty. The script imports strictly within that label (removing deleted entities without touching other namespaces' catalogs), deletes any unlabelled `asbmon:catalog:*` keys left by earlier publishes, and bumps the sentinel last, so instances never reload a half-written catalog. An enumeration with no entities is refused, not published.
+
+| Key | Type | Notes |
+|---|---|---|
+| `CFG-200` `catalog:publishedAtUtc` | ISO 8601 | Logged on read. |
+| `CFG-201` `catalog:entities:<entityPath>:kind` | enum | `Queue` \| `Subscription`. Invalid → inferred from the path. |
+| `CFG-202` `catalog:entities:<entityPath>:forwardTo` | string | Absent for a terminal entity. |
+| `CFG-203` `catalog:entities:<entityPath>:enablePartitioning` | bool | A subscription carries its topic's value. Invalid → `true` (age is reported as a lower bound, never as exact). |
+| `CFG-204` `catalog:entities:<entityPath>:maxDeliveryCount` | int | Invalid → `10`. |
+| `CFG-205` `catalog:entities:<entityPath>:defaultMessageTimeToLive` | TimeSpan | Invariant (`14.00:00:00`) or ISO 8601. Invalid → no TTL. |
+
+A malformed field never drops the entity, because an entity missing from the catalog is never measured.
+
 ### 7.3 Configuration governance
 
 - App Configuration RBAC is scoped tightly; the set of principals able to write `asbmon:*` is the real control over alert silencing ([OPN-009](#14-open-items-register)).
@@ -692,9 +711,9 @@ Namespace `EIE.ServiceBus`. Dimensions are deliberately minimal to bound time-se
 | `TEL-001` `OldestMessageAgeSeconds` | `EntityPath`, `SourceRegion` | `Status ∈ {Measured, Empty, Degraded}` |
 | `TEL-002` `AgeBreachRatioSev2` | `EntityPath`, `SourceRegion` | `Status ∈ {Measured, Degraded}` |
 | `TEL-003` `AgeBreachRatioSev1` | `EntityPath`, `SourceRegion` | `Status ∈ {Measured, Degraded}` |
-| `TEL-004` `ActiveMessageCount` | `EntityPath`, `SourceRegion` | always |
-| `TEL-005` `DeadLetterMessageCount` | `EntityPath`, `SourceRegion` | always |
-| `TEL-006` `TransferDeadLetterMessageCount` | `EntityPath`, `SourceRegion` | always |
+| `TEL-004` `ActiveMessageCount` | `EntityPath`, `SourceRegion` | whenever the count is known; never with the catalog source |
+| `TEL-005` `DeadLetterMessageCount` | `EntityPath`, `SourceRegion` | whenever the count is known; never with the catalog source |
+| `TEL-006` `TransferDeadLetterMessageCount` | `EntityPath`, `SourceRegion` | whenever the count is known; never with the catalog source |
 | `TEL-007` `AgeDeltaSeconds` | `EntityPath`, `SourceRegion` | when prior observation exists |
 | `TEL-008` `MonitorHeartbeat` | `SourceRegion`, `IsLeaseHolder` | every tick, unconditionally |
 
@@ -731,10 +750,10 @@ Namespace `EIE.ServiceBus`. Dimensions are deliberately minimal to bound time-se
 | `Sev1ThresholdSeconds` | int | effective threshold in force |
 | `Sev2ThresholdSeconds` | int | effective threshold in force |
 | `ThresholdSource` | string | `AppConfig` \| `LastKnownGood` \| `CompiledDefault` |
-| `ActiveMessageCount` | long | |
-| `DeadLetterMessageCount` | long | |
-| `ScheduledMessageCount` | long | |
-| `TransferDeadLetterMessageCount` | long | |
+| `ActiveMessageCount` | long | nullable — unknown, not zero ([SPEC-DEVIATION-008](#appendix-b--implementation-deviations)) |
+| `DeadLetterMessageCount` | long | nullable |
+| `ScheduledMessageCount` | long | nullable |
+| `TransferDeadLetterMessageCount` | long | nullable |
 | `OldestSequenceNumber` | long | nullable |
 | `OldestDeliveryCount` | int | nullable — poison-message signal |
 | `OldestMessageIdHash` | string | nullable, salted SHA256 |
@@ -848,7 +867,7 @@ All over `ServiceBusMessageAgeDeduped()` / `ServiceBusMonitorHealth_CL`.
 | `ALR-019` | Clock anomaly | `EventType == "ClockAnomaly"` ≥ `ClockAnomalyTicksForAlert` | Sev3 | 15 min |
 | `ALR-020` | Lease takeover | `EventType == "LeaseTakeover"` | Sev3 | 5 min |
 | `ALR-021` | Split brain | `EventType == "SplitBrain"` sustained ≥ `SplitBrainAlertMinutes` | Sev3 | 5 min |
-| `ALR-022` | Transfer DLQ non-empty | `TransferDeadLetterMessageCount > 0` sustained ≥ 10 min | Sev2 | 5 min |
+| `ALR-022` | Transfer DLQ non-empty | `TransferDeadLetterMessageCount > 0` sustained ≥ 10 min. **Cannot fire with the catalog source**: the count is always null ([SPEC-DEVIATION-008](#appendix-b--implementation-deviations)) | Sev2 | 5 min |
 | `ALR-023` | Unsupported entity config | `EventType == "UnsupportedEntityConfiguration"` | Sev3 | 60 min |
 | `ALR-024` | Entity unclassified | `EventType == "EntityUnclassified"` | Sev4 | 24 h |
 | `ALR-025` | Depth reconciliation divergence | platform-metric depth vs peek-observed depth disagree ≥ 3 consecutive checks | Sev3 | 5 min |
@@ -937,7 +956,7 @@ System-assigned managed identity per Function App.
 
 | Purpose | Role | Scope | Notes |
 |---|---|---|---|
-| Entity discovery | **Reader** | Namespace | ARM plane only: `Microsoft.ServiceBus/namespaces/queues/read`, `.../topics/subscriptions/read`. Materially less privilege than `ServiceBusAdministrationClient`, which wants Data Owner. |
+| Entity discovery | **none** | — | Reads the App Configuration catalog under the App Configuration Data Reader grant below. No ARM role (SPEC-DEVIATION-008). |
 | Peek | **Azure Service Bus Data Receiver** | Namespace | Smallest built-in role permitting peek. |
 | Lease | Storage Blob Data Contributor | Lease container | |
 | Logs Ingestion | Monitoring Metrics Publisher | DCR | |
@@ -964,6 +983,8 @@ OIDC-authenticated pipelines, Bicep, no secrets in the pipeline.
 
 ```
 1. Build, unit test, architecture test
+1a. Publish entity catalog (infra/pipeline/Publish-EntityCatalog.ps1);
+    without it the gate in step 4 cannot pass
 2. Deploy Bicep to STANDBY region (Central US)
 3. Slot swap with warm-up (populates discovery cache pre-swap)
 4. GATE: poll until heartbeat observed with
@@ -1118,7 +1139,24 @@ A separate utility — **explicitly not deployed to production** — that provis
 | `TST-107` | Active region stopped | standby takes over within `LeaseDurationSeconds` + 1 tick |
 | `TST-108` | Both regions running (forced split-brain) | duplicates detectable by `MeasurementId`; `ALR-021` fires |
 | `TST-109` | Consumer stopped, messages arriving | `ConsumptionStalled` within 5 ticks |
-| `TST-110` | Forwarding destination deleted | transfer DLQ populates; `ALR-022` fires |
+| `TST-110` | Forwarding destination deleted | transfer DLQ populates; `ALR-022` fires. **Not achievable** until ALR-022 has a count source — see [SPEC-DEVIATION-008](#appendix-b--implementation-deviations) |
+
+### 11.10 Unit tests — entity catalog and unknown counts
+
+| ID | Case | Expected |
+|---|---|---|
+| `TST-120` | Catalog with a forwarding queue and a subscription | both parsed with kind, role, target, partitioning, delivery count, TTL |
+| `TST-121` | Catalog empty or unpublished | throws; discovery keeps its previous cache |
+| `TST-122` | `enablePartitioning` malformed | treated as partitioned, `AgeAccuracy == BestEffort` |
+| `TST-123` | Other fields malformed | entity kept with conservative defaults |
+| `TST-124` | Retired with CFG-020 | — |
+| `TST-125` | Retired with CFG-020 | — |
+| `TST-126` | Counts unknown | no resume point is used |
+| `TST-127` | Counts unknown, zero straight after `Measured`, `ZeroCorroborationTicks == 1` | `Indeterminate` |
+| `TST-128` | Counts unknown, clean zeros for `ZeroCorroborationTicks` | promotes to `Empty` |
+| `TST-129` | Counts unknown, head unchanged 5 measured ticks | `ConsumptionStalled == true` |
+| `TST-130` | Counts unknown | row count columns are `null`, not `0` |
+| `TST-131` | Counts unknown | no count metric points emitted |
 
 ---
 
@@ -1235,13 +1273,15 @@ Points where the implementation departs from a literal reading of this spec, wit
 | **SPEC-DEVIATION-004** | During cold-start ticks, entities outside the current stagger slice emit `NotMeasured` with `MeasurementContext = ColdStart` rather than being omitted. | FR-027 (stagger to avoid a recycle burst) and FR-007 (every entity emits every tick) are in tension. Emitting a `NotMeasured` record satisfies both: the burst is avoided and absence of a row still never means healthy. |
 | **SPEC-DEVIATION-005** | Monitor-level events are written to a second table, `ServiceBusMonitorHealth_CL`, rather than into `ServiceBusMessageAge_CL`. S-05 names only the measurement table. | The schemas are unrelated. Folding heartbeats and lease events into the measurement table would either pollute it with mostly-null columns or require a sentinel `EntityPath`, both of which corrupt the per-entity queries that alerting depends on. |
 | **SPEC-DEVIATION-006** | ALR-041 (cross-region duplicate grouping) is implemented by **dimension design** rather than an alert processing rule: the metric alerts split on `EntityPath` only, so Azure aggregates both regions onto one time series. ALR-040 (failover grouping) is **not deployed** — see below. | Azure alert processing rules express suppression and action-group substitution, not correlation grouping. ALR-040's intent is recorded in the runbook as an operational step. **This is a genuine gap:** during a namespace failover, expect N separate alerts rather than one grouped incident. |
-| **SPEC-DEVIATION-007** | Runtime message counts come from the ARM `countDetails` on the entity list, not from `ServiceBusAdministrationClient`. | §10.3 requires discovery to use ARM Reader rather than Data Owner. `GetQueueRuntimePropertiesAsync` authenticates against the data plane and effectively needs Data Owner, which would defeat the privilege reduction. One ARM enumeration per tick also costs far less than ~80 per-entity calls. **Trade-off:** ARM counts may lag the broker slightly more than a data-plane read; the corroboration logic in §3.5 treats disagreement between counts and peek as `Indeterminate`, which is the safe direction. |
+| **SPEC-DEVIATION-007** | **Withdrawn** with the `Arm` catalog source (SPEC-DEVIATION-008); kept for history. With that source, runtime message counts come from the ARM `countDetails` on the entity list, not from `ServiceBusAdministrationClient`. | §10.3 requires discovery to use ARM Reader rather than Data Owner. `GetQueueRuntimePropertiesAsync` authenticates against the data plane and effectively needs Data Owner, which would defeat the privilege reduction. One ARM enumeration per tick also costs far less than ~80 per-entity calls. **Trade-off:** ARM counts may lag the broker slightly more than a data-plane read; the corroboration logic in §3.5 treats disagreement between counts and peek as `Indeterminate`, which is the safe direction. |
+| **SPEC-DEVIATION-008** | The function does not call ARM. Entities come from a catalog the deployment pipeline publishes to App Configuration (`asbmon:catalog:*`, [§7.2](#72-runtime-configuration-azure-app-configuration-no-redeploy)). Runtime counts have no source and are reported as `null`. Consequences: (1) counts are null in every row and emit no metric point; (2) no resume point is used; (3) "prior depth" in §3.5 is taken from the previous tick's status; (4) `ConsumptionStalled` treats an unknown count as non-zero, because `Measured` proves a message exists; (5) **ALR-022 cannot fire**; (6) the function holds no Reader role. | ARM is not available to the function: the hosting network has no route to the ARM endpoint, and the cloud platform team has declined to make it available (2026-11). An earlier `Arm` catalog source (CFG-020) was removed for that reason. `ServiceBusAdministrationClient` would supply counts but needs Data Owner, which §10.3 rules out. The pipeline that creates entities already has ARM access, so it publishes what exists. Each consequence errs toward `Indeterminate`, or toward a lower-bound age, never toward a fabricated healthy zero (NFR-001). **Trade-offs:** a deferred block deeper than `MaxPeekScanDepth` stays `HeadBlockedByDeferred` (ALR-011) and is never scanned past; an entity changed outside the pipeline is invisible until the next publish; transfer-DLQ growth is unmonitored. **Open:** restore ALR-022 by peeking `<entity>/$Transfer/$DeadLetterQueue` for a single message, which `Data Receiver` already permits. |
 
 ### Verification status
 
 | Category | Status |
 |---|---|
-| Unit tests (TST-001..049), telemetry/schema (TST-060..065), architecture (TST-070..072) | **88 passing** |
+| Unit tests (TST-001..049), telemetry/schema (TST-060..065), architecture (TST-070..072), catalog and unknown counts (TST-120..131) | **100 passing** |
+| `infra/pipeline/Publish-EntityCatalog.ps1` | Dry-run verified against mocked `az` output only. **Not run against a real namespace or App Configuration store.** |
 | Emulator integration (TST-080..085) | Implemented, **skipped** without `ASBMON_EMULATOR_CONNECTION_STRING` |
 | Contract tests (TST-090..094) | Implemented, **skipped** without `ASBMON_CONTRACT_NAMESPACE` |
 | Alerting (TST-050..056) and staging scenarios (TST-100..110) | Driven by `tools/…ScenarioGenerator`; require a live staging environment and are **not verified** |

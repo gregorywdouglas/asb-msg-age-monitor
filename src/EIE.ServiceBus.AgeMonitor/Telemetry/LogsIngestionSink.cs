@@ -68,10 +68,10 @@ public sealed class LogsIngestionSink : ILogsSink
         public required int Sev1ThresholdSeconds { get; init; }
         public required int Sev2ThresholdSeconds { get; init; }
         public required string ThresholdSource { get; init; }
-        public required long ActiveMessageCount { get; init; }
-        public required long DeadLetterMessageCount { get; init; }
-        public required long ScheduledMessageCount { get; init; }
-        public required long TransferDeadLetterMessageCount { get; init; }
+        public long? ActiveMessageCount { get; init; }
+        public long? DeadLetterMessageCount { get; init; }
+        public long? ScheduledMessageCount { get; init; }
+        public long? TransferDeadLetterMessageCount { get; init; }
         public long? OldestSequenceNumber { get; init; }
         public int? OldestDeliveryCount { get; init; }
         public string? OldestMessageIdHash { get; init; }

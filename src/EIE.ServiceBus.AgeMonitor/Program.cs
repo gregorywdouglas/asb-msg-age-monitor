@@ -2,7 +2,6 @@ using Azure.Core;
 using Azure.Identity;
 using Azure.Messaging.ServiceBus;
 using Azure.Monitor.Ingestion;
-using Azure.ResourceManager;
 using Azure.Storage.Blobs;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Configuration;
@@ -35,10 +34,21 @@ var host = new HostBuilder()
         // the monitor's availability depend on App Configuration's.
         if (!string.IsNullOrWhiteSpace(settings.AppConfigEndpoint))
         {
+            // The store may be shared by monitors of other namespaces, and catalog entity
+            // paths are namespace-relative, so the catalog is labelled with the namespace
+            // name (SPEC-DEVIATION-008). Without a namespace the label would resolve to the
+            // null label and load nothing useful.
+            if (string.IsNullOrWhiteSpace(settings.NamespaceName))
+            {
+                throw new InvalidOperationException(
+                    "ServiceBus:NamespaceName is required: it selects this namespace's entity catalog in App Configuration.");
+            }
+
             configuration.AddAzureAppConfiguration(options =>
             {
                 options.Connect(new Uri(settings.AppConfigEndpoint), credential)
                     .Select("asbmon:*")
+                    .Select(AppConfigEntityCatalog.CatalogKeyFilter, settings.NamespaceName)
                     .ConfigureRefresh(refresh => refresh
                         .Register(settings.AppConfigSentinelKey, refreshAll: true)
                         .SetRefreshInterval(TimeSpan.FromSeconds(settings.AppConfigRefreshIntervalSeconds)));
@@ -56,13 +66,17 @@ var host = new HostBuilder()
         services.AddSingleton<IConfigureOptions<MonitorOptions>, MonitorOptionsConfigurator>();
         services.AddOptions<MonitorOptions>();
 
+        if (!string.IsNullOrWhiteSpace(settings.AppConfigEndpoint))
+        {
+            services.AddAzureAppConfiguration();
+            services.AddHostedService<AppConfigurationRefreshService>();
+        }
+
         // --- Azure clients ----------------------------------------------------------
         services.AddSingleton(_ => new ServiceBusClient(
             settings.FullyQualifiedNamespace,
             credential,
             new ServiceBusClientOptions { TransportType = ServiceBusTransportType.AmqpTcp }));
-
-        services.AddSingleton(_ => new ArmClient(credential));
 
         services.AddSingleton(_ => new LogsIngestionClient(new Uri(settings.DceEndpoint), credential));
 
@@ -78,9 +92,10 @@ var host = new HostBuilder()
         services.AddSingleton<ServiceBusEntityPeeker>();
         services.AddSingleton<IEntityPeeker>(sp => sp.GetRequiredService<ServiceBusEntityPeeker>());
 
-        services.AddSingleton<ArmServiceBusCatalog>();
-        services.AddSingleton<IEntityCatalog>(sp => sp.GetRequiredService<ArmServiceBusCatalog>());
-        services.AddSingleton<IEntityRuntimeReader>(sp => sp.GetRequiredService<ArmServiceBusCatalog>());
+        // SPEC-DEVIATION-008. ARM is not available to the function, so entities come from
+        // the pipeline-published catalog and runtime counts are unknown.
+        services.AddSingleton<IEntityCatalog, AppConfigEntityCatalog>();
+        services.AddSingleton<IEntityRuntimeReader, UnavailableRuntimeReader>();
 
         services.AddSingleton<IEntityFaultClassifier, ServiceBusFaultClassifier>();
         services.AddSingleton<IScanStateStore, ScanStateStore>();

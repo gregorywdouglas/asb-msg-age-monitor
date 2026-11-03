@@ -61,11 +61,12 @@ public sealed class ApplicationInsightsMetricSink : IMetricSink
                 }
             }
 
-            // TEL-004..006. Always emitted, including for idle entities, because absence
-            // of a data point must never be readable as health.
-            Track("ActiveMessageCount", record.Runtime.ActiveMessageCount, dimensions);
-            Track("DeadLetterMessageCount", record.Runtime.DeadLetterMessageCount, dimensions);
-            Track("TransferDeadLetterMessageCount", record.Runtime.TransferDeadLetterMessageCount, dimensions);
+            // TEL-004..006. Emitted whenever a count is known, including for idle entities,
+            // because absence of a data point must never be readable as health. An unknown
+            // count (SPEC-DEVIATION-008) emits no point: a zero would be fabricated.
+            TrackCount("ActiveMessageCount", record.Runtime.ActiveMessageCount, dimensions);
+            TrackCount("DeadLetterMessageCount", record.Runtime.DeadLetterMessageCount, dimensions);
+            TrackCount("TransferDeadLetterMessageCount", record.Runtime.TransferDeadLetterMessageCount, dimensions);
 
             // TEL-007.
             if (record.AgeDeltaSeconds is { } delta)
@@ -115,5 +116,13 @@ public sealed class ApplicationInsightsMetricSink : IMetricSink
         }
 
         _client.TrackMetric(telemetry);
+    }
+
+    private void TrackCount(string name, long? value, IDictionary<string, string> dimensions)
+    {
+        if (value is { } count)
+        {
+            Track(name, count, dimensions);
+        }
     }
 }

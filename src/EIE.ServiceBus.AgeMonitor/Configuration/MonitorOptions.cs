@@ -9,9 +9,8 @@ namespace EIE.ServiceBus.AgeMonitor.Configuration;
 public sealed class MonitorSettings
 {
     public string FullyQualifiedNamespace { get; set; } = string.Empty;
-    public string SubscriptionId { get; set; } = string.Empty;
-    public string ResourceGroup { get; set; } = string.Empty;
     public string NamespaceName { get; set; } = string.Empty;
+
     public string SourceRegion { get; set; } = string.Empty;
     public string Environment { get; set; } = string.Empty;
 

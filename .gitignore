@@ -1,0 +1,7 @@
+# Build output
+bin/
+obj/
+
+# Azure Functions local settings: holds the hashing salt and other per-developer
+# values. A committed salt lets anyone reverse the hashed message and correlation ids.
+local.settings.json

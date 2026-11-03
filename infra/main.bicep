@@ -21,7 +21,7 @@ param environmentName string
 @description('Fully qualified Service Bus namespace, geo-replicated so it follows the current primary.')
 param serviceBusFullyQualifiedNamespace string
 
-@description('Service Bus namespace name (ARM).')
+@description('Service Bus namespace name.')
 param serviceBusNamespaceName string
 
 @description('Resource group holding the Service Bus namespace.')
@@ -67,10 +67,6 @@ var namePrefix = 'asbmon-${environmentName}-${sourceRegion}'
 
 // Spec §10.3. Built-in role definition ids.
 var roles = {
-  // Reader at namespace scope covers ARM entity enumeration. Deliberately NOT Data
-  // Owner: ServiceBusAdministrationClient would require it, which is why discovery goes
-  // through the ARM plane instead.
-  reader: 'acdd72a7-3385-48ef-bd42-f606fba81ae7'
   // The smallest built-in role that permits peek. It also grants receive and complete,
   // which is why TST-070 fails the build on any receive-family symbol (spec OPN-003).
   serviceBusDataReceiver: '4f6d3b9b-027b-4f4c-9142-0e5a2a2247e0'
@@ -224,30 +220,28 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
 
         { name: 'MonitorSchedule', value: monitorSchedule }
 
-        { name: 'ServiceBus:FullyQualifiedNamespace', value: serviceBusFullyQualifiedNamespace }
-        { name: 'ServiceBus:SubscriptionId', value: subscription().subscriptionId }
-        { name: 'ServiceBus:ResourceGroup', value: serviceBusResourceGroup }
-        { name: 'ServiceBus:NamespaceName', value: serviceBusNamespaceName }
+        { name: 'ServiceBus__FullyQualifiedNamespace', value: serviceBusFullyQualifiedNamespace }
+        { name: 'ServiceBus__NamespaceName', value: serviceBusNamespaceName }
 
-        { name: 'Monitor:SourceRegion', value: sourceRegion }
-        { name: 'Monitor:Environment', value: environmentName }
+        { name: 'Monitor__SourceRegion', value: sourceRegion }
+        { name: 'Monitor__Environment', value: environmentName }
 
-        { name: 'AppConfig:Endpoint', value: appConfig.properties.endpoint }
-        { name: 'AppConfig:SentinelKey', value: 'asbmon:sentinel' }
-        { name: 'AppConfig:RefreshIntervalSeconds', value: '30' }
+        { name: 'AppConfig__Endpoint', value: appConfig.properties.endpoint }
+        { name: 'AppConfig__SentinelKey', value: 'asbmon:sentinel' }
+        { name: 'AppConfig__RefreshIntervalSeconds', value: '30' }
 
-        { name: 'Lease:StorageAccountUri', value: leaseStorageAccountUri }
-        { name: 'Lease:ContainerName', value: 'asbmon-lease' }
-        { name: 'Lease:BlobName', value: 'primary' }
+        { name: 'Lease__StorageAccountUri', value: leaseStorageAccountUri }
+        { name: 'Lease__ContainerName', value: 'asbmon-lease' }
+        { name: 'Lease__BlobName', value: 'primary' }
 
-        { name: 'Telemetry:DceEndpoint', value: telemetry.outputs.dceEndpoint }
-        { name: 'Telemetry:DcrImmutableId', value: telemetry.outputs.dcrImmutableId }
-        { name: 'Telemetry:MeasurementStream', value: 'Custom-ServiceBusMessageAge_CL' }
-        { name: 'Telemetry:HealthStream', value: 'Custom-ServiceBusMonitorHealth_CL' }
-        { name: 'Telemetry:MetricNamespace', value: 'EIE.ServiceBus' }
+        { name: 'Telemetry__DceEndpoint', value: telemetry.outputs.dceEndpoint }
+        { name: 'Telemetry__DcrImmutableId', value: telemetry.outputs.dcrImmutableId }
+        { name: 'Telemetry__MeasurementStream', value: 'Custom-ServiceBusMessageAge_CL' }
+        { name: 'Telemetry__HealthStream', value: 'Custom-ServiceBusMonitorHealth_CL' }
+        { name: 'Telemetry__MetricNamespace', value: 'EIE.ServiceBus' }
 
         {
-          name: 'Hashing:Salt'
+          name: 'Hashing__Salt'
           value: '@Microsoft.KeyVault(VaultName=${keyVaultName};SecretName=asbmon-hash-salt)'
         }
       ]
@@ -268,7 +262,6 @@ module serviceBusRoles 'modules/servicebus-roles.bicep' = {
   params: {
     serviceBusNamespaceName: serviceBusNamespaceName
     principalId: functionApp.identity.principalId
-    readerRoleId: roles.reader
     dataReceiverRoleId: roles.serviceBusDataReceiver
   }
 }

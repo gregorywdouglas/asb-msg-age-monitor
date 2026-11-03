@@ -56,17 +56,19 @@ public sealed class InfrastructureConformanceTests
 
         // Spec §10.3. Azure Service Bus Data Owner would let the monitor manage entities
         // as well as consume them, and is what ServiceBusAdministrationClient would have
-        // required — avoiding it is the reason discovery goes through the ARM plane.
+        // required. Reader is absent because discovery reads the published catalog, not
+        // ARM (SPEC-DEVIATION-008).
         const string dataOwnerRoleId = "090c5cfd-751d-490a-894a-3ce6f1109419";
         const string dataSenderRoleId = "69a216fc-b8fb-44d8-bc22-1f3c2cd27a39";
+        const string readerRoleId = "acdd72a7-3385-48ef-bd42-f606fba81ae7";
 
         Assert.DoesNotContain(dataOwnerRoleId, main, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(dataSenderRoleId, main, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(readerRoleId, main, StringComparison.OrdinalIgnoreCase);
 
         // The exact set the spec permits.
         var expected = new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            ["reader"] = "acdd72a7-3385-48ef-bd42-f606fba81ae7",
             ["serviceBusDataReceiver"] = "4f6d3b9b-027b-4f4c-9142-0e5a2a2247e0",
             ["storageBlobDataContributor"] = "ba92f5b4-2d11-453d-a403-e96b0029c9fe",
             ["monitoringMetricsPublisher"] = "3913510d-42f4-4e42-8a64-420c390055eb",
@@ -78,6 +80,19 @@ public sealed class InfrastructureConformanceTests
         {
             Assert.Contains($"{name}: '{id}'", main, StringComparison.Ordinal);
         }
+    }
+
+    [Fact(DisplayName = "SPEC-DEVIATION-008 the catalog is written and read under the namespace label, so a shared store cannot mix namespaces")]
+    public void Dev008_CatalogIsLabelledByNamespace()
+    {
+        // Entity paths are namespace-relative. Unlabelled, two namespaces in one store
+        // overwrite each other, and one's strict import deletes the other's catalog.
+        var script = File.ReadAllText(RepoFile("infra/pipeline/Publish-EntityCatalog.ps1"));
+        var program = File.ReadAllText(RepoFile("src/EIE.ServiceBus.AgeMonitor/Program.cs"));
+
+        Assert.Contains("--label $ServiceBusNamespaceName", script, StringComparison.Ordinal);
+        Assert.Contains("--strict", script, StringComparison.Ordinal);
+        Assert.Contains(".Select(AppConfigEntityCatalog.CatalogKeyFilter, settings.NamespaceName)", program, StringComparison.Ordinal);
     }
 
     [Fact(DisplayName = "TST-072b the identity is system-assigned, so no secret exists to leak")]
@@ -142,7 +157,63 @@ public sealed class InfrastructureConformanceTests
         Assert.Contains("totalRetentionDays int = 730", telemetry, StringComparison.Ordinal);
     }
 
+    [Theory(DisplayName = "TST-060f the portal-wizard sample and transform match the shared column schema")]
+    [InlineData("measurement")]
+    [InlineData("health")]
+    public void Tst060f_ManualPortalFilesMatchSchema(string kind)
+    {
+        // infra/manual is the fallback when neither Bicep nor the script can run. It is a
+        // hand-kept copy of the schema, so without this it drifts on the next new column.
+        using var schema = JsonDocument.Parse(File.ReadAllText(RepoFile($"infra/schema/{kind}-columns.json")));
+        var columns = schema.RootElement.EnumerateArray()
+            .Select(e => (Name: e.GetProperty("name").GetString()!, Type: e.GetProperty("type").GetString()!))
+            .ToList();
+
+        var kql = File.ReadAllText(RepoFile($"infra/manual/{kind}-transform.kql"));
+        var projected = System.Text.RegularExpressions.Regex.Matches(kql, @"(\w+) = to(\w+)\(")
+            .Select(m => (Name: m.Groups[1].Value, Type: KqlCastToSchemaType(m.Groups[2].Value)))
+            .ToList();
+
+        Assert.Equal(columns, projected);
+
+        using var sample = JsonDocument.Parse(File.ReadAllText(RepoFile($"infra/manual/{kind}-sample.json")));
+        var row = sample.RootElement.EnumerateArray().Single().EnumerateObject().ToList();
+
+        Assert.Equal(columns.Select(c => c.Name), row.Select(p => p.Name));
+
+        // The wizard infers each column's type from the sample value.
+        foreach (var (column, value) in columns.Zip(row.Select(p => p.Value)))
+        {
+            var inferred = value.ValueKind switch
+            {
+                JsonValueKind.True or JsonValueKind.False => "boolean",
+                JsonValueKind.String => DateTimeOffset.TryParse(value.GetString(), out _) ? "datetime" : "string",
+                JsonValueKind.Number when !value.TryGetInt64(out _) => "real",
+                JsonValueKind.Number when !value.TryGetInt32(out _) => "long",
+                JsonValueKind.Number => "int",
+                _ => value.ValueKind.ToString()
+            };
+
+            Assert.True(inferred == column.Type, $"{kind}-sample.json: {column.Name} would be inferred as {inferred}, schema says {column.Type}");
+        }
+    }
+
+    [Fact(DisplayName = "CFG-001 app setting names use '__', because Flex Consumption runs on Linux where ':' is not allowed")]
+    public void Cfg001_AppSettingNamesHaveNoColon()
+    {
+        var main = File.ReadAllText(RepoFile("infra/main.bicep"));
+
+        // 'function:<name>' under alwaysReady is Flex syntax, not an app setting.
+        var colonNames = System.Text.RegularExpressions.Regex.Matches(main, @"name: '(?!function:)([A-Za-z]+:[A-Za-z]+)'")
+            .Select(m => m.Groups[1].Value)
+            .ToList();
+
+        Assert.True(colonNames.Count == 0, $"App settings with ':' are not delivered on Linux: {string.Join(", ", colonNames)}");
+    }
+
     // ---- helpers --------------------------------------------------------------
+
+    private static string KqlCastToSchemaType(string cast) => cast == "bool" ? "boolean" : cast;
 
     private static List<string> LoadColumnNames(string relativePath)
     {
